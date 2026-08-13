@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from usd_mcp.explain import explain_value, why_not_visible
@@ -77,3 +79,46 @@ def test_a_path_that_is_not_a_stage_raises(tmp_path):
 
     with pytest.raises(ValueError, match="could not open as a USD stage"):
         explain_value(str(not_a_stage), "/World/Ball", "radius")
+
+
+def test_a_non_imageable_prim_reports_its_actual_type(shot):
+    result = why_not_visible(shot, "/World/Surface")
+
+    assert result["visible"] is False
+    assert result["checks"]["imageable"] is False
+    assert "Material" in result["reasons"][0]
+    assert "not an Imageable" in result["reasons"][0]
+
+
+def test_an_unloaded_payload_is_reported_as_absent(composed):
+    """The answer has to match the session being asked about.
+
+    With payloads loaded this prim renders, so a diagnosis that always loads them
+    would call it visible while the artist is looking at nothing.
+    """
+    loaded = why_not_visible(composed, "/Set/Deferred")
+    assert loaded["visible"] is True
+
+    deferred = why_not_visible(composed, "/Set/Deferred", load_payloads=False)
+    assert deferred["visible"] is False
+    assert deferred["checks"]["loaded"] is False
+    assert any("unloaded payload" in reason for reason in deferred["reasons"])
+
+
+def test_array_and_matrix_values_serialise_as_plain_python(shot):
+    """USD hands back C++ types; every value in a result has to survive JSON.
+
+    Real stages are mostly vectors and matrices, so a converter that only handled
+    scalars would work on this suite and fail on the first asset.
+    """
+    color = explain_value(shot, "/World/Ball", "primvars:displayColor")
+    assert color["resolved_value"] == [[1.0, 0.0, 0.0]]
+
+    transform = explain_value(shot, "/World/Ball", "xformOp:transform")
+    assert transform["resolved_value"][0] == [1.0, 0.0, 0.0, 0.0]
+
+    order = explain_value(shot, "/World/Ball", "xformOpOrder")
+    assert order["resolved_value"] == ["xformOp:transform"]
+
+    json.dumps(color)
+    json.dumps(transform)

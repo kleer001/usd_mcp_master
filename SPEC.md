@@ -84,13 +84,18 @@ distinguishes:
 |---|---|---|
 | Prim never composed | `GetPrimAtPath` invalid | deepest existing ancestor, and where the chain stops |
 | Deactivated | `Prim.IsActive()` | the prim, plus the layers authoring `active` |
-| Unloaded payload | `HasAuthoredPayloads()` and not `IsLoaded()` | payload contents absent |
+| Unloaded payload | `HasAuthoredPayloads()` and not `IsLoaded()` | payload contents absent; requires `load_payloads=False` |
 | Not imageable | `UsdGeom.Imageable` invalid | the prim's actual type |
 | Invisible | `ComputeVisibility()` | every ancestor authoring `visibility=invisible`, root-down, with layers |
 | Excluded by purpose | `ComputePurpose()` | the purpose token and why a default pass skips it |
 
 Visibility and purpose inherit down namespace, so the answer is usually authored on an
 ancestor rather than the prim asked about. The walk reports the ancestor.
+
+`load_payloads` must match the session being asked about. A stage opened with payloads
+loaded composes their contents, so a prim deferred in the artist's session resolves as
+visible here — the right answer to a question nobody asked. Pass `load_payloads=False`
+to ask about a session that deferred them.
 
 ### `explain_prim(stage_path, prim_path)`
 

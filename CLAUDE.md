@@ -50,7 +50,7 @@ pushing:
 
 ```bash
 .venv/bin/ruff check usd_mcp/ tests/
-.venv/bin/python -m pytest --cov=usd_mcp --cov-fail-under=85
+.venv/bin/python -m pytest --cov=usd_mcp --cov-fail-under=90
 ```
 
 ## Conventions

@@ -177,7 +177,7 @@ composition, not mocks.
 
 ```
 ruff check usd_mcp/ tests/
-pytest --cov=usd_mcp --cov-fail-under=85
+pytest --cov=usd_mcp --cov-fail-under=90
 ```
 
 ## License

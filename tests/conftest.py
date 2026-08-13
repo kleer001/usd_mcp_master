@@ -7,6 +7,9 @@ def Xform "World"
     def Sphere "Ball"
     {
         double radius = 1
+        color3f[] primvars:displayColor = [(1, 0, 0)]
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+        token[] xformOpOrder = ["xformOp:transform"]
     }
 
     def Xform "Hidden"
@@ -30,6 +33,10 @@ def Xform "World"
     def Sphere "Guide"
     {
         token purpose = "guide"
+    }
+
+    def Material "Surface"
+    {
     }
 }
 """

@@ -46,14 +46,19 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
     }
 
 
-def why_not_visible(stage_path, prim_path):
+def why_not_visible(stage_path, prim_path, load_payloads=True):
     """Diagnose an absent or unrendered prim.
 
-    Covers the four ways a prim disappears without an error: it was never
-    composed, an ancestor is deactivated, visibility is authored `invisible`
-    somewhere up the chain, or its purpose excludes it from a default render.
+    Covers the ways a prim disappears without an error: it was never composed, an
+    ancestor is deactivated, a payload holding it was never loaded, visibility is
+    authored `invisible` somewhere up the chain, or its purpose excludes it from a
+    default render.
+
+    `load_payloads` must match the session being asked about. Answering with payloads
+    loaded about a session that deferred them reports a prim as visible while the
+    artist is looking at nothing.
     """
-    stage = open_stage(stage_path)
+    stage = open_stage(stage_path, load_payloads=load_payloads)
     prim = stage.GetPrimAtPath(prim_path)
     if not prim:
         return _explain_missing_prim(stage, prim_path)

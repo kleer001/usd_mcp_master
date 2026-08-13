@@ -26,12 +26,17 @@ def register(server, annotations):
         return _explain_value(stage_path, prim_path, attribute_name, time_code)
 
     @server.tool(annotations=annotations)
-    def why_not_visible(stage_path: str, prim_path: str) -> dict[str, Any]:
-        """Explain why a prim does not appear: missing, deactivated, invisible, or
-        excluded by purpose.
+    def why_not_visible(
+        stage_path: str, prim_path: str, load_payloads: bool = True
+    ) -> dict[str, Any]:
+        """Explain why a prim does not appear: missing, deactivated, an unloaded
+        payload, invisible, or excluded by purpose.
 
         Args:
             stage_path: path to a .usd/.usda/.usdc/.usdz file.
             prim_path: absolute prim path, e.g. /World/Set/Chair.
+            load_payloads: set False to ask about a session that deferred payloads.
+                Answering with payloads loaded about a session without them reports a
+                prim as visible while the artist is looking at nothing.
         """
-        return _why_not_visible(stage_path, prim_path)
+        return _why_not_visible(stage_path, prim_path, load_payloads)

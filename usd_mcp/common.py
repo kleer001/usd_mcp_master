@@ -9,8 +9,13 @@ growing its own.
 from pxr import Tf, Usd
 
 
-def open_stage(stage_path):
+def open_stage(stage_path, load_payloads=True):
     """Open a stage, or raise `ValueError` naming what went wrong.
+
+    `load_payloads=False` composes the stage without pulling payload contents in,
+    matching a session that deferred them. It changes the answer: an unloaded
+    payload's descendants are absent, and a prim whose type comes from inside the
+    payload composes as untyped.
 
     Every way of failing to open a stage — missing file, wrong format, malformed
     scene description — surfaces from USD as `Tf.ErrorException`, which carries the
@@ -18,8 +23,9 @@ def open_stage(stage_path):
     at this boundary is what makes the `ValueError` contract the rest of the package
     documents actually hold.
     """
+    load = Usd.Stage.LoadAll if load_payloads else Usd.Stage.LoadNone
     try:
-        stage = Usd.Stage.Open(stage_path)
+        stage = Usd.Stage.Open(stage_path, load=load)
     except Tf.ErrorException as error:
         raise ValueError(f"could not open as a USD stage: {stage_path}: {error}") from error
     if not stage:
