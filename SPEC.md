@@ -52,7 +52,7 @@ alongside `ruff` and the composition tests.
 
 ## Implemented tools
 
-All five are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+All six are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
 `explain_value` and `why_not_visible` answer what a value resolved to and why a prim is
 absent; the three below answer the questions underneath those — how a prim was composed
 at all, and where an edit could land.
@@ -149,6 +149,29 @@ authored and would read as an opinion that does not exist.
 reference or a payload composes into a different layer stack, where strength means
 something else; the tool raises rather than answer a question it was not asked.
 
+### `resolve_path(stage_path, asset_path, anchor_layer=None)`
+
+Which file an asset path names, and when it names nothing, what was tried. Composition
+explains which opinion won; resolution explains whether the file holding it was found —
+a different failure with the same symptom, and the one behind "it works on my machine".
+
+| Field | Meaning |
+|---|---|
+| `resolved_path` | the file the path resolves to, or null |
+| `resolved` / `exists` | whether the resolver returned a path, and whether that file is on disk |
+| `anchor_layer` | the layer the path was anchored to |
+| `resolver` / `resolver_context` | the resolver class in force and the stage's context |
+| `identifier` | the identifier the resolver derived before resolving it |
+
+A relative asset path anchors to the layer that authors it — not the stage's root layer
+and not the working directory — so `anchor_layer` may be any layer the stage uses, not
+only the root layer stack. Anchoring a path authored inside a referenced asset to the
+root would answer a question nobody asked.
+
+`Ar.Resolver.CreateIdentifier` is a string operation and is not an authoring call; the
+safety contract's denylist names `CreateIdentifierForNewAsset` and `ResolveForNewAsset`,
+which are.
+
 ## Surface beyond tools
 
 Tools are called; resources and prompts are offered. A read-only server should lean on
@@ -197,7 +220,7 @@ for it. Built after, every mutation can state where the edit goes and what it wi
 outrank before it commits.
 
 **Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`, `explain_prim`,
-`explain_variants`, `explain_edit_target`. The last of these answers where an edit would
+`explain_variants`, `explain_edit_target`, `resolve_path`. The last of these answers where an edit would
 land without authoring one, which is most of what phase 2 was for.
 
 **Phase 2 — dry run.** `what_would_change_if(layer, edits)`: apply edits to a throwaway
@@ -237,8 +260,6 @@ Diagnostics that fit the read-only shape, in the order they'd earn their place:
   not do any fuzzy numerical comparison. The slightest precision difference will cause a
   diff" ([USD toolset](https://openusd.org/release/toolset.html)). A re-exported layer with
   float noise is therefore indistinguishable from a real edit.
-- `resolve_path(asset_path)` — the resolver used, the anchoring layer, the context, and the
-  final file. The documented diagnostic today is `TF_DEBUG=AR_RESOLVER_INIT` and log reading.
 - `profile_stage(stage_path)` — time dependencies, prims per layer, payload and instancing
   coverage. SideFX staff have noted that a node time-dependent only to set a file path can
   "end up causing huge amounts of your LOP network to re-cook on every frame"

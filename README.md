@@ -2,7 +2,8 @@
 
 An MCP server that answers the USD questions nobody's tooling answers: **why does this
 attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
-**which variant am I getting**, and **if I edit this layer, will it even win**.
+**which variant am I getting**, **if I edit this layer will it even win**, and **which file
+does this asset path actually name**.
 
 It is read-only, local-only, and has no network path. It does not edit your layers.
 
@@ -136,6 +137,25 @@ no write path to answer.
 The target layer must be in the stage's root layer stack. A layer reached through a
 reference or payload composes somewhere else, where "stronger" means something different,
 so the tool raises instead of guessing.
+
+### `resolve_path(stage_path, asset_path, anchor_layer=None)`
+
+Which file an asset path actually names — and when it names nothing, the anchoring layer
+and resolver context it was looked up through. A relative path resolves against the layer
+that authors it, not your working directory, which is why resolving one by hand so often
+disagrees with USD. The documented alternative is `TF_DEBUG=AR_RESOLVER_INIT` and reading
+log spew.
+
+```jsonc
+{
+  "asset_path": "./nosuchfile.usda",
+  "anchor_layer": "/shots/010/shot.usda",
+  "resolver": "DefaultResolver",
+  "resolved": false,
+  "resolved_path": null,
+  "explanation": "./nosuchfile.usda does not resolve. It was anchored at /shots/010/shot.usda and looked up through ..."
+}
+```
 
 ## Resources and prompts
 

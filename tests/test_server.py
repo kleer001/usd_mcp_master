@@ -21,6 +21,7 @@ def test_tools_are_registered_read_only():
         "explain_prim",
         "explain_variants",
         "explain_edit_target",
+        "resolve_path",
     }
     assert all(tool.annotations.read_only_hint for tool in tools)
 
@@ -79,3 +80,10 @@ def test_a_failing_explainer_surfaces_as_a_tool_error(shot):
                 {"stage_path": shot, "prim_path": "/World/Ball", "attribute_name": "nosuchattr"},
             )
         )
+
+
+def test_resolve_path_round_trips_through_the_tool_layer(composed):
+    result = call("resolve_path", stage_path=composed, asset_path="./nosuchfile.usda")
+
+    assert result["resolved"] is False
+    assert "does not resolve" in result["explanation"]

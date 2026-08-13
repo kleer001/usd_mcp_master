@@ -1,6 +1,6 @@
 # usd_mcp — working notes
 
-A read-only MCP server that explains OpenUSD composition: five tools, two resources,
+A read-only MCP server that explains OpenUSD composition: six tools, two resources,
 two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
 safety posture, tool surface, and the phased roadmap.
 
@@ -11,6 +11,7 @@ usd_mcp/
   common.py    open a stage, demand a prim, convert USD types to plain Python
   explain.py   value and visibility explainers; pure functions over a stage path
   compose.py   arc, variant, and edit-target explainers; likewise pure
+  resolve.py   asset-path resolution; the only module that touches Ar
   tools/       registration only, one module per domain, each with register(server, annotations)
   resources.py stage facts as URI templates
   prompts.py   named diagnostic sequences

@@ -35,7 +35,8 @@ PROCESS_CALLS = {"system", "popen", "execv", "execve", "execl", "execlp", "execv
 # single call that turns a read into a write, so it is listed even though the name is
 # short — nothing in a read-only explainer legitimately calls `.Set()`.
 AUTHORING_CALLS = {
-    "Save", "Export", "ExportToString", "CreateNew", "CreateIdentifier",
+    "Save", "Export", "ExportToString", "CreateNew", "CreateIdentifierForNewAsset",
+    "ResolveForNewAsset", "CanWriteAssetToPath",
     "SetEditTarget", "Set", "SetDefault", "ClearDefault", "SetInfo", "SetTimeSample",
     "DefinePrim", "CreatePrim", "OverridePrim", "RemovePrim", "CreateAttribute",
     "CreateRelationship", "SetActive", "SetVisibility", "SetSpecifier",

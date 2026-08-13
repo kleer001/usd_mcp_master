@@ -15,6 +15,7 @@ from mcp.types import ToolAnnotations
 from usd_mcp import prompts, resources
 from usd_mcp.tools import compose as compose_tools
 from usd_mcp.tools import explain as explain_tools
+from usd_mcp.tools import resolve as resolve_tools
 
 server = MCPServer(
     name="usd-mcp",
@@ -33,6 +34,7 @@ READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False, idempote
 
 explain_tools.register(server, READ_ONLY)
 compose_tools.register(server, READ_ONLY)
+resolve_tools.register(server, READ_ONLY)
 resources.register(server)
 prompts.register(server)
 
