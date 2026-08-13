@@ -3,9 +3,10 @@
 An MCP server that answers the USD questions nobody's tooling answers: **why does this
 attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
 **which variant am I getting**, **if I edit this layer will it even win**, and **which file
-does this asset path actually name**.
+does this asset path actually name**. It can author too, if you ask it to.
 
-It is read-only, local-only, and has no network path. It does not edit your layers.
+It is local-only and has no network path. It is read-only by default: the write path
+is absent unless you start it with `--enable-write`.
 
 ## Why
 
@@ -174,16 +175,53 @@ Two prompts name a diagnostic order rather than making you reconstruct it:
 `debug_override` for an override that is not taking effect, and `audit_layer_stack` for
 reviewing what a shot layer contributes before publish.
 
+## Writing (opt-in)
+
+The server has no write path unless you ask for one:
+
+```
+usd-mcp --enable-write
+```
+
+That registers `set_attribute`, `set_visibility`, and `set_active`. Without the flag
+they do not exist — they are absent from the tool list, not disabled inside it, so a
+client cannot call one by accident.
+
+Every mutating tool takes an explicit `target_layer` and never infers it, and writes
+nothing until `confirm=true`:
+
+```jsonc
+// set_attribute(..., value: 9.0, target_layer: "/shots/010/shot.usda")  — no confirm
+{
+  "applied": false,
+  "change": { "kind": "attribute", "name": "radius", "from": 5.0, "to": 9.0 },
+  "would_win": true,
+  "explanation": "Dry run — nothing was written. An opinion authored in /shots/010/shot.usda would win: no layer stronger than it authors this attribute. Call again with confirm=true to author it."
+}
+```
+
+The dry run is what the tool does by default, so it is not a step an agent can skip.
+An edit into a layer that something stronger overrides is applied where you asked and
+reported as not having moved the resolved value — correcting an asset a shot overrides
+is a real thing to want, and the tool says plainly what did and did not change.
+
+Every applied mutation is appended to `~/.usd-mcp/audit.log` as JSON lines, or wherever
+`USD_MCP_AUDIT_LOG` points, naming the layer, prim, attribute, and both values.
+
 ## Safety
 
 Every tool is annotated `readOnlyHint`, and the posture behind that is in
-[SPEC.md](SPEC.md): local-only, no network egress, no self-update, no write path, no
-runtime plugin loading, `pip` install only, pinned to a released `usd-core`. A facility
-can read the whole server in one sitting.
+[SPEC.md](SPEC.md): local-only, no network egress, no self-update, no write path unless
+you ask for one, no runtime plugin loading, `pip` install only, pinned to a released
+`usd-core`. A facility can read the whole server in one sitting — and authoring is
+confined to a single file, `usd_mcp/write.py`, so "what can change my stage" has a
+one-file answer.
 
 Those claims are tests, not promises. `tests/test_safety_contract.py` parses the package
-and fails the build on a network import, a process launch, a USD authoring call, a
-dependency naming a git ref, or a tool registered without `readOnlyHint`.
+and fails the build on a network import, a process launch, a USD authoring call outside
+`write.py`, a dependency naming a git ref, a default server exposing anything not
+annotated `readOnlyHint`, or a mutating tool that dropped its `confirm` gate or stopped
+demanding an explicit target layer.
 
 Authoring is the destination, staged behind the explainer rather than ruled out — a
 write path that cannot say where an edit lands reproduces the exact failure this server

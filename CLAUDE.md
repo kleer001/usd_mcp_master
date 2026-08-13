@@ -1,7 +1,7 @@
 # usd_mcp — working notes
 
-A read-only MCP server that explains OpenUSD composition: six tools, two resources,
-two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
+A read-only MCP server that explains OpenUSD composition, and authors into them when asked: six read-only
+tools, three opt-in mutating tools, two resources, two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
 safety posture, tool surface, and the phased roadmap.
 
 ## Layout
@@ -12,16 +12,18 @@ usd_mcp/
   explain.py   value and visibility explainers; pure functions over a stage path
   compose.py   arc, variant, and edit-target explainers; likewise pure
   resolve.py   asset-path resolution; the only module that touches Ar
+  write.py     the ONLY module that authors; everything else reads
   tools/       registration only, one module per domain, each with register(server, annotations)
   resources.py stage facts as URI templates
   prompts.py   named diagnostic sequences
-  server.py    MCP entry point; builds the server and calls the register functions
+  server.py    build_server(enable_write=False); registration only, plus argparse
 tests/
   conftest.py  builds a two-layer stage (shot.usda sublayers base.usda) in tmp_path
   test_explain.py  the value and visibility explainers, called directly
   test_compose.py  the arc, variant, and edit-target explainers, called directly
   test_server.py   the same behaviour through the MCP tool layer
   test_resources.py / test_prompts.py  the non-tool surfaces
+  test_write.py    the write path, including that a dry run writes nothing
   test_safety_contract.py  parses usd_mcp/ and asserts the SPEC.md safety contract
 ```
 
@@ -56,9 +58,16 @@ pushing:
 
 ## Conventions
 
-- **No write path.** Nothing in this repo opens a layer for edit. Adding one is a
-  deliberate phase-3 step with the requirements listed in `SPEC.md#roadmap`, not a
-  convenience someone slips into an explainer.
+- **Authoring lives in `write.py` and nowhere else.** The safety test allows USD
+  authoring calls in that one file and fails the build anywhere else, so a convenience
+  `.Set()` slipped into an explainer does not compile past CI. New USD mutation goes
+  there or it does not go in.
+- **Writes are opt-in and the default server has none.** `build_server()` registers no
+  mutating tool; `--enable-write` adds exactly three. The write path is absent from the
+  tool list rather than disabled inside it, and a test pins that set.
+- **The dry run is the default, not a separate tool.** Every mutating function takes
+  `confirm=False` and returns the diff without writing. Do not add a mutating path that
+  writes on its first call.
 - **No network.** No HTTP client, no telemetry, no update check. Stage contents are
   covered material under a typical VFX NDA and must not leave the machine.
 - **The contract is a test, not a promise.** `test_safety_contract.py` fails the build
@@ -81,6 +90,9 @@ Built against the 2.x SDK, which replaced `FastMCP` with `mcp.server.MCPServer`.
 Result fields are snake_case (`is_error`, `structured_content`, `input_schema`,
 `uri_template`). A tool annotated `-> dict` raises `InvalidSignature`; structured output
 needs `-> dict[str, Any]`.
+
+An f-string is not a docstring — Python leaves `__doc__` as None, so a tool defined with
+one ships with no description at all. Tool docstrings must be plain literals.
 
 `server.call_tool` *raises* `mcp.server.mcpserver.exceptions.ToolError` when the
 underlying function raises — it does not return a result with `is_error` set. Tests that

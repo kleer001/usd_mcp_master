@@ -98,8 +98,24 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
     attr = require_attribute(prim, attribute_name)
-    layer = _layer_in_root_stack(stage, target_layer)
+    layer = layer_in_root_stack(stage, target_layer)
 
+    return {
+        "prim": str(prim.GetPath()),
+        "attribute": attribute_name,
+        "target_layer": layer.identifier,
+        "current_resolved_value": plain(attr.Get()),
+        "layer_stack": [candidate.identifier for candidate in root_layer_stack(stage)],
+        **edit_target_verdict(prim, attr, layer),
+    }
+
+
+def edit_target_verdict(prim, attr, layer):
+    """Whether an opinion authored in `layer` would take effect, and what stops it.
+
+    Split out so the write path decides with the same code that explains, rather
+    than with a second implementation that can drift from it.
+    """
     writable = _is_writable(layer)
     root_arc = Usd.PrimCompositionQuery(prim).GetCompositionArcs()[0]
     stronger = Usd.AttributeQuery(attr, root_arc.MakeResolveTargetStrongerThan(layer))
@@ -127,17 +143,12 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         blocked_by = "strength"
 
     return {
-        "prim": str(prim.GetPath()),
-        "attribute": attribute_name,
-        "target_layer": layer.identifier,
         "would_win": blocked_by is None,
         "blocked_by": blocked_by,
         "target_writable": writable,
         "outranked_by": blocker if blocked_by == "strength" else None,
         "value_that_would_survive": plain(stronger.Get()) if outranked else None,
-        "current_resolved_value": plain(attr.Get()),
         "explanation": _edit_target_explanation(layer, blocked_by, blocker),
-        "layer_stack": [candidate.identifier for candidate in root_layer_stack(stage)],
     }
 
 
@@ -224,7 +235,7 @@ def _selection_opinions(prim, variant_set_name):
     return opinions
 
 
-def _layer_in_root_stack(stage, target_layer):
+def layer_in_root_stack(stage, target_layer):
     """Resolve `target_layer` to a layer in the stage's root layer stack.
 
     Refusing anything else is the point. A layer reached through a reference or a

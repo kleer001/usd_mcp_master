@@ -10,8 +10,12 @@ run — see **Enforcement** below.
    Stage contents — prim paths, asset names, layer identifiers — never leave the machine.
    Scene graph contents are covered material under a typical VFX NDA; a tool that
    transmits them is not evaluable regardless of quality.
-2. **No write path.** No tool opens a layer for edit. There is no write mode to
-   misconfigure and no flag that enables one.
+2. **No write path by default.** `usd-mcp` registers no tool that can author. The three
+   mutating tools exist only when the server is started with `--enable-write`: the write
+   path is *absent from the tool list*, not disabled inside it, so a client cannot
+   discover or call one. Authoring is confined to `usd_mcp/write.py`; every other module
+   in the package reads. With writes enabled, every mutation names its target layer,
+   writes nothing until `confirm=true`, and is appended to the audit log.
 3. **`pip install` only.** No install script, no piped shell, no downloaded binary.
    Facilities run vetted, pinned package repositories precisely so that can't happen.
 4. **No self-update.** The server has no update command and no version check. Shows
@@ -27,10 +31,14 @@ run — see **Enforcement** below.
    executing whatever a directory contains cannot state what it does, and the safety
    contract above would describe only the shipped half.
 
-The write path planned in **Roadmap** inherits three requirements from this contract:
-read-only remains the server's default, every mutation offers a dry-run diff first, and
-every applied mutation appends to an audit log naming layer, prim, attribute, prior
-value, and new value.
+The write path inherits three requirements from this contract, and each is enforced
+below: read-only remains the server's default, every mutation offers a dry-run diff
+first, and every applied mutation appends to an audit log naming layer, prim, attribute,
+prior value, and new value. The audit log is `~/.usd-mcp/audit.log` unless
+`USD_MCP_AUDIT_LOG` names another path; it is JSON lines, one per applied mutation.
+
+Two audiences are served by that default rather than one. A facility deploys `usd-mcp`
+and the write path does not exist in the process. A freelancer adds a flag.
 
 ### Enforcement
 
@@ -41,14 +49,19 @@ module in `usd_mcp/` and asserts:
 | Test | Contract item |
 |---|---|
 | no import of a socket, HTTP, or mail module | 1 |
-| no USD authoring or layer-save call | 2 |
-| every registered tool carries `readOnlyHint: true` | 2 |
+| no USD authoring or layer-save call outside `write.py` | 2 |
+| the default server registers no tool that is not `readOnlyHint: true` | 2 |
+| enabling writes adds exactly three tools, each `destructiveHint: true` | 2 |
+| every mutating tool defaults `confirm` to false and requires `target_layer` | 2 |
 | no `subprocess`, `os.system`, or other process launch | 3, 4 |
 | no dependency naming a git ref, URL, or local path | 6 |
 
-The annotation test reads the live server's tool list rather than the source, so a tool
-added without the annotation fails it. These run in CI against Python 3.10 through 3.12
-alongside `ruff` and the composition tests.
+The last three read the live server's published schema rather than the source, so a
+mutating tool that dropped its confirm gate or inferred its edit target would still
+typecheck, still run, and still fail the build. Pinning the mutating set means a fourth
+such tool cannot arrive quietly: adding one is a deliberate edit to that test, in the
+same commit as the clause above it changes. These run in CI against Python 3.10 through
+3.12 alongside `ruff` and the composition tests.
 
 ## Implemented tools
 
@@ -180,6 +193,39 @@ root would answer a question nobody asked.
 safety contract's denylist names `CreateIdentifierForNewAsset` and `ResolveForNewAsset`,
 which are.
 
+## Write tools
+
+Registered only under `--enable-write`, annotated `readOnlyHint: false` and
+`destructiveHint: true`, and the only tools in the server so annotated.
+
+### `set_attribute(stage_path, prim_path, attribute_name, value, target_layer, confirm=False)`
+### `set_visibility(stage_path, prim_path, visible, target_layer, confirm=False)`
+### `set_active(stage_path, prim_path, active, target_layer, confirm=False)`
+
+| Field | Meaning |
+|---|---|
+| `applied` | whether anything was written; false for every `confirm=false` call |
+| `change` | `kind` (attribute or metadata), `name`, `from`, `to` |
+| `would_win` / `blocked_by` / `outranked_by` | the `explain_edit_target` verdict for this edit |
+| `resolved_value_after` | what the value resolves to once the edit is applied |
+| `audit_log` | the path the mutation was recorded to |
+
+`target_layer` is required and never inferred. `set_attribute` overrides an attribute
+the prim already has, by authored opinion or by schema; it does not invent properties.
+`set_visibility` reports the prim's *computed* visibility afterwards, so authoring
+`inherited` under an invisible ancestor reports the prim still invisible rather than
+implying it was revealed. `set_active` deactivates a whole subtree — descendants stop
+composing rather than becoming hidden.
+
+Two refusals, both `ValueError`: a target layer outside the root layer stack, and a
+packaged layer, which accepts an edit in memory and then refuses to save it.
+
+An edit into a layer something stronger overrides is **applied, not refused**. Authoring
+a losing opinion is legitimate — correcting an asset that a shot overrides is the
+ordinary case — so the edit lands where it was asked to and the result states that the
+resolved value did not move. Refusing it would be the tool deciding it knows better;
+reporting it as successful would be the silent failure this server exists to end.
+
 ## Surface beyond tools
 
 Tools are called; resources and prompts are offered. A read-only server should lean on
@@ -231,12 +277,15 @@ outrank before it commits.
 `explain_variants`, `explain_edit_target`, `resolve_path`. The last of these answers where an edit would
 land without authoring one, which is most of what phase 2 was for.
 
-**Phase 2 — dry run.** `what_would_change_if(layer, edits)`: apply edits to a throwaway
-session layer and report which resolved values move, in the same opinion-stack form
-`explain_value` returns. Authoring machinery with no commit step, and the bridge to
-phase 3.
+**Phase 2 — dry run (absorbed).** A separate `what_would_change_if` was not built.
+`explain_edit_target` answers where an edit lands without authoring one, and the default
+call to every mutating tool returns that same diff and writes nothing — so the dry run
+is what the write tool does rather than a tool beside it that a caller can skip. No
+throwaway session layer is involved: nothing is authored to predict the outcome, which
+is why the prediction is safe to run against a production stage.
 
-**Phase 3 — write.** `set_attribute`, `set_visibility`, `set_active`. Each takes an
+**Phase 3 — write (implemented, opt-in).** `set_attribute`, `set_visibility`,
+`set_active`, registered only under `--enable-write`. Each takes an
 explicit edit target layer and refuses to infer one — guessing the edit target is the
 failure this server exists to diagnose. Each returns the phase 2 diff for what it did,
 and appends to the audit log. Read-only stays the default because the server defaults
@@ -249,10 +298,6 @@ values would move. Committing requires a second call with `confirm=True`, which 
 can only make after showing the diff. The dry run is therefore not a separate tool an
 agent may skip; it is what the write tool does by default. Mutating tools are annotated
 `destructiveHint: true` and are the only tools in the server not annotated read-only.
-
-Two audiences pull differently here and both are served by that ordering. A facility
-needs the safety contract above to clear review at all. A freelancer or solo artist has
-no review to clear and wants the tool to do work — the contract costs them a flag.
 
 Standalone USD authoring earns its keep where no DCC is in the loop: headless batch
 fixes across many layers, pipeline and TD work, CI, repairing a shot without opening

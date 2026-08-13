@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from usd_mcp.server import server
+from usd_mcp.server import build_server, server
 
 
 def call(name, **arguments):
@@ -87,3 +87,54 @@ def test_resolve_path_round_trips_through_the_tool_layer(composed):
 
     assert result["resolved"] is False
     assert "does not resolve" in result["explanation"]
+
+
+def write_call(name, **arguments):
+    write_server = build_server(enable_write=True)
+    result = asyncio.run(write_server.call_tool(name, arguments))
+    assert not result.is_error, result.content
+    return result.structured_content
+
+
+def test_the_default_server_registers_no_write_tools():
+    names = {tool.name for tool in asyncio.run(server.list_tools())}
+
+    assert not names & {"set_attribute", "set_visibility", "set_active"}
+
+
+def test_enabling_writes_adds_exactly_the_three_mutating_tools():
+    default = {tool.name for tool in asyncio.run(server.list_tools())}
+    enabled = {tool.name for tool in asyncio.run(build_server(enable_write=True).list_tools())}
+
+    assert enabled - default == {"set_attribute", "set_visibility", "set_active"}
+
+
+def test_a_dry_run_round_trips_through_the_tool_layer(shot, tmp_path, monkeypatch):
+    monkeypatch.setenv("USD_MCP_AUDIT_LOG", str(tmp_path / "audit.log"))
+    result = write_call(
+        "set_attribute",
+        stage_path=shot,
+        prim_path="/World/Ball",
+        attribute_name="radius",
+        value=9.0,
+        target_layer=shot,
+    )
+
+    assert result["applied"] is False
+    assert "Dry run" in result["explanation"]
+
+
+def test_a_confirmed_write_round_trips_through_the_tool_layer(shot, tmp_path, monkeypatch):
+    monkeypatch.setenv("USD_MCP_AUDIT_LOG", str(tmp_path / "audit.log"))
+    result = write_call(
+        "set_attribute",
+        stage_path=shot,
+        prim_path="/World/Ball",
+        attribute_name="radius",
+        value=9.0,
+        target_layer=shot,
+        confirm=True,
+    )
+
+    assert result["applied"] is True
+    assert result["resolved_value_after"] == 9.0
