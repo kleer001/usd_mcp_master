@@ -122,3 +122,25 @@ def test_array_and_matrix_values_serialise_as_plain_python(shot):
 
     json.dumps(color)
     json.dumps(transform)
+
+
+def test_an_asset_path_reports_both_what_was_authored_and_what_it_resolves_to(shot, tmp_path):
+    """`str()` of an asset path is USD source syntax and drops the resolved location.
+
+    For a texture or a reference that location is the fact worth having, and a null
+    one states a broken asset path plainly instead of hiding it in @-wrapped text.
+    """
+    (tmp_path / "tex").mkdir()
+    (tmp_path / "tex" / "diffuse.exr").write_bytes(b"")
+
+    found = explain_value(shot, "/World/Ball", "texture")["resolved_value"]
+    assert found == {
+        "asset_path": "./tex/diffuse.exr",
+        "resolved_path": str(tmp_path / "tex" / "diffuse.exr"),
+    }
+
+    missing = explain_value(shot, "/World/Ball", "missingTexture")["resolved_value"]
+    assert missing["asset_path"] == "./tex/nosuchfile.exr"
+    assert missing["resolved_path"] is None
+
+    json.dumps(found)

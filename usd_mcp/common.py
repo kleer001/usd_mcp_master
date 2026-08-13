@@ -6,7 +6,7 @@ here so both explainer modules convert at the same boundary rather than each
 growing its own.
 """
 
-from pxr import Tf, Usd
+from pxr import Sdf, Tf, Usd
 
 
 def open_stage(stage_path, load_payloads=True):
@@ -63,6 +63,14 @@ def plain(value):
         return None
     if isinstance(value, (bool, int, float, str)):
         return value
+    if isinstance(value, Sdf.AssetPath):
+        # str() of an asset path yields USD's source syntax, @like this@, and drops the
+        # resolved location — the one fact worth having about a texture or a reference.
+        # A null resolved_path is a broken asset path stated plainly.
+        return {
+            "asset_path": value.path,
+            "resolved_path": value.resolvedPath or None,
+        }
     if hasattr(value, "__len__") and not isinstance(value, str):
         return [plain(item) for item in value]
     return str(value)

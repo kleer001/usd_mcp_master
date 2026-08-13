@@ -6,7 +6,25 @@ rather than reconstructed each time.
 """
 
 
-def register(server):
+def _fix_step_text(enable_write):
+    """What to do once the layer is known, which depends on the server having a write path.
+
+    A prompt naming tools the server did not register would send a client after
+    something that does not exist, so the read-only build stops at the diagnosis.
+    """
+    if not enable_write:
+        return (
+            " This server is read-only, so report the layer and the value to author and "
+            "stop there; do not claim the fix has been made."
+        )
+    return (
+        " Then author it: call set_attribute with that layer as target_layer and leave "
+        "confirm at false, show the user the diff it returns, and call again with "
+        "confirm=true only once they agree."
+    )
+
+
+def register(server, enable_write=False):
     @server.prompt()
     def debug_override(stage_path: str, prim_path: str, attribute_name: str) -> str:
         """Work out why an override is not changing the resolved value.
@@ -32,7 +50,7 @@ def register(server):
             f"4. Once the intended layer is known, call explain_edit_target for it to confirm "
             f"an opinion authored there would actually win.\n\n"
             f"Report the cause and the layer to author in. Do not propose an edit that "
-            f"explain_edit_target says would lose."
+            f"explain_edit_target says would lose." + _fix_step_text(enable_write)
         )
 
     @server.prompt()

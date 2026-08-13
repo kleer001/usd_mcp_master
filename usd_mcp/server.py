@@ -61,7 +61,7 @@ def build_server(enable_write=False):
     compose_tools.register(server, READ_ONLY)
     resolve_tools.register(server, READ_ONLY)
     resources.register(server)
-    prompts.register(server)
+    prompts.register(server, enable_write)
 
     if enable_write:
         write_tools.register(server, MUTATING)

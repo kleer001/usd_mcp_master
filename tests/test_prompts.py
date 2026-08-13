@@ -1,6 +1,6 @@
 import asyncio
 
-from usd_mcp.server import server
+from usd_mcp.server import build_server, server
 
 
 def render(name, arguments):
@@ -40,3 +40,30 @@ def test_audit_prompt_points_at_the_stage_resources(composed):
 
     assert f"usd://stage/{composed}/summary" in text
     assert f"usd://stage/{composed}/layer-stack" in text
+
+
+def test_the_read_only_prompt_does_not_send_a_client_after_tools_it_lacks(shot):
+    """A prompt naming set_attribute on a server without it is a dead end."""
+    text = render(
+        "debug_override",
+        {"stage_path": shot, "prim_path": "/World/Ball", "attribute_name": "radius"},
+    )
+
+    assert "set_attribute" not in text
+    assert "read-only" in text
+
+
+def test_the_write_prompt_ends_at_a_confirmed_edit(shot):
+    write_server = build_server(enable_write=True)
+    result = asyncio.run(
+        write_server.get_prompt(
+            "debug_override",
+            {"stage_path": shot, "prim_path": "/World/Ball", "attribute_name": "radius"},
+        )
+    )
+    text = "\n".join(
+        m.content.text for m in result.messages if hasattr(m.content, "text")
+    )
+
+    assert "set_attribute" in text
+    assert "confirm" in text

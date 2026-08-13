@@ -77,6 +77,7 @@ Returns the resolved value plus every authored opinion in strength order.
 | Field | Meaning |
 |---|---|
 | `resolved_value` | what `UsdAttribute.Get()` returns |
+| `resolved_value` (asset-typed) | `{asset_path, resolved_path}`; `resolved_path` is null when the asset does not resolve |
 | `resolved_from` | the `Usd.ResolveInfo` source kind |
 | `authored_opinions[]` | one entry per `SdfPropertySpec` in `GetPropertyStack()`, strongest first |
 | `authored_opinions[].layer` | identifier of the layer holding the opinion |
@@ -87,6 +88,11 @@ Returns the resolved value plus every authored opinion in strength order.
 
 Raises `ValueError` when the prim or the attribute does not exist. It does not fall back
 to a near match.
+
+An asset-valued attribute reports both halves rather than a string. `str()` of an
+`SdfAssetPath` yields USD's source syntax, `@like this@`, and drops the resolved
+location — which for a texture or a reference is the fact worth having, and whose
+absence is exactly how a broken asset path presents.
 
 ### `why_not_visible(stage_path, prim_path)`
 

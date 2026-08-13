@@ -79,8 +79,9 @@ pushing:
   an error. Every way of failing to open a stage surfaces from USD as
   `Tf.ErrorException`; `common.open_stage` translates it so the `ValueError` contract
   holds at the boundary, and that is the only place a USD exception is caught.
-- **Plain dicts out.** USD returns C++ types; `_plain()` converts at the boundary so
-  results serialise. Extend it rather than converting at call sites.
+- **Plain dicts out.** USD returns C++ types; `common.plain()` converts at the boundary
+  so results serialise. Extend it rather than converting at call sites. It special-cases
+  `Sdf.AssetPath`, whose `str()` is USD source syntax and discards the resolved path.
 - Documentation is addressed to humans. No section instructs an agent — that pattern
   is an injection surface and it is called out as a defect in `SPEC.md`.
 

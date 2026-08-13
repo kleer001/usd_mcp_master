@@ -11,6 +11,8 @@ def Xform "World"
         color3f[] primvars:displayColor = [(1, 0, 0)]
         matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
         token[] xformOpOrder = ["xformOp:transform"]
+        asset texture = @./tex/diffuse.exr@
+        asset missingTexture = @./tex/nosuchfile.exr@
     }
 
     def Xform "Hidden"
@@ -163,15 +165,28 @@ def composed(tmp_path):
     return str(shot_path)
 
 
+PACKAGED_USDA = """#usda 1.0
+
+def Xform "World"
+{
+    def Sphere "Ball"
+    {
+        double radius = 1
+    }
+}
+"""
+
+
 @pytest.fixture
 def packaged(tmp_path):
     """A stage packaged into a .usdz.
 
     A packaged layer accepts an edit in memory and then refuses to save it, so it is
-    the case where strength is the wrong question entirely.
+    the case where strength is the wrong question entirely. Its source carries no asset
+    paths: packaging resolves and bundles them, which a fixture has no files for.
     """
     source = tmp_path / "packaged_source.usda"
-    source.write_text(BASE_USDA)
+    source.write_text(PACKAGED_USDA)
     usdz_path = tmp_path / "packaged.usdz"
     assert UsdUtils.CreateNewUsdzPackage(str(source), str(usdz_path))
     return str(usdz_path)

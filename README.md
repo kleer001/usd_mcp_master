@@ -56,6 +56,13 @@ that beat it.
 }
 ```
 
+An asset-valued attribute reports what was authored *and* what it resolves to, since a
+null resolved path is how a broken texture or reference presents:
+
+```jsonc
+{ "asset_path": "./tex/diffuse.exr", "resolved_path": "/shots/010/tex/diffuse.exr" }
+```
+
 ### `why_not_visible(stage_path, prim_path)`
 
 Covers the four ways a prim disappears without raising an error: it never composed, an
