@@ -22,9 +22,10 @@ reading the source.
    git dependency, no vendored USD build.
 7. **Linux-first.** Developed and tested on Linux, which is what the facilities run.
 
-Should a write path ever be added, it inherits three requirements from this contract:
-read-only remains the default, every mutation offers a dry-run diff first, and every
-applied mutation appends to an audit log naming layer, prim, attribute, and prior value.
+The write path planned in **Roadmap** inherits three requirements from this contract:
+read-only remains the server's default, every mutation offers a dry-run diff first, and
+every applied mutation appends to an audit log naming layer, prim, attribute, prior
+value, and new value.
 
 ## Implemented tools
 
@@ -65,12 +66,40 @@ distinguishes:
 Visibility and purpose inherit down namespace, so the answer is usually authored on an
 ancestor rather than the prim asked about. The walk reports the ancestor.
 
+## Roadmap
+
+Authoring is the destination, not a rejected option. It is staged behind the explainer
+for a specific reason: USD's characteristic failure is an edit landing in the wrong
+layer and silently losing — no error, no warning, a value that simply did not change.
+A write path built before the explainer produces that failure faster and cannot account
+for it. Built after, every mutation can state where the edit goes and what it will
+outrank before it commits.
+
+**Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`.
+
+**Phase 2 — dry run.** `what_would_change_if(layer, edits)`: apply edits to a throwaway
+session layer and report which resolved values move, in the same opinion-stack form
+`explain_value` returns. Authoring machinery with no commit step, and the bridge to
+phase 3.
+
+**Phase 3 — write.** `set_attribute`, `set_visibility`, `set_active`. Each takes an
+explicit edit target layer and refuses to infer one — guessing the edit target is the
+failure this server exists to diagnose. Each returns the phase 2 diff for what it did,
+and appends to the audit log. Read-only stays the default because the server defaults
+to it, not because the code cannot write.
+
+Two audiences pull differently here and both are served by that ordering. A facility
+needs the safety contract above to clear review at all. A freelancer or solo artist has
+no review to clear and wants the tool to do work — the contract costs them a flag.
+
+Standalone USD authoring earns its keep where no DCC is in the loop: headless batch
+fixes across many layers, pipeline and TD work, CI, repairing a shot without opening
+Houdini. Inside a DCC, an MCP server for that application is the better instrument.
+
 ## Not implemented
 
-Candidates that fit the same read-only shape, in the order they'd earn their place:
+Diagnostics that fit the read-only shape, in the order they'd earn their place:
 
-- `what_would_change_if(layer, edit)` — dry-run an edit and report the prims and
-  attributes whose resolved values move. The natural companion to `explain_value`.
 - `diff_stages(a, b, tolerance)` — prims added, removed, retyped, and attributes changed,
   composed or per-layer. USD ships `usddiff`, but it `usdcat`s both files and hands the
   text to `diff`; the official docs call it "currently quite primitive" and note it "does

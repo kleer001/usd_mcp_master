@@ -79,6 +79,11 @@ Both tools are annotated `readOnlyHint`, and the posture behind that is in
 install only, pinned to a released `usd-core`. A facility can read the whole server in
 one sitting.
 
+Authoring is the destination, staged behind the explainer rather than ruled out — a
+write path that cannot say where an edit lands reproduces the exact failure this server
+diagnoses. The three phases and the contract a write path inherits are in
+[SPEC.md](SPEC.md#roadmap).
+
 ## Development
 
 ```
