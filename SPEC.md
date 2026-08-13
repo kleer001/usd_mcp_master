@@ -3,7 +3,8 @@
 ## Safety contract
 
 These are constraints on the implementation, not aspirations. Each is checkable by
-reading the source.
+reading the source, and most are checked by `tests/test_safety_contract.py` on every
+run — see **Enforcement** below.
 
 1. **No network egress.** The server imports no HTTP client and calls no remote service.
    Stage contents — prim paths, asset names, layer identifiers — never leave the machine.
@@ -21,11 +22,33 @@ reading the source.
 6. **Pinned, released dependencies.** `mcp` and `usd-core`, both from PyPI. No fork, no
    git dependency, no vendored USD build.
 7. **Linux-first.** Developed and tested on Linux, which is what the facilities run.
+8. **No code loaded from disk at runtime.** The server has no plugin directory, no
+   extension hook, and no path it imports user Python from. A tool surface that grows by
+   executing whatever a directory contains cannot state what it does, and the safety
+   contract above would describe only the shipped half.
 
 The write path planned in **Roadmap** inherits three requirements from this contract:
 read-only remains the server's default, every mutation offers a dry-run diff first, and
 every applied mutation appends to an audit log naming layer, prim, attribute, prior
 value, and new value.
+
+### Enforcement
+
+Prose a reviewer must trust is worth less than a check that fails the build, so the
+contract is executable where it can be. `tests/test_safety_contract.py` parses every
+module in `usd_mcp/` and asserts:
+
+| Test | Contract item |
+|---|---|
+| no import of a socket, HTTP, or mail module | 1 |
+| no USD authoring or layer-save call | 2 |
+| every registered tool carries `readOnlyHint: true` | 2 |
+| no `subprocess`, `os.system`, or other process launch | 3, 4 |
+| no dependency naming a git ref, URL, or local path | 6 |
+
+The annotation test reads the live server's tool list rather than the source, so a tool
+added without the annotation fails it. These run in CI against Python 3.10 through 3.12
+alongside `ruff` and the composition tests.
 
 ## Implemented tools
 
@@ -66,6 +89,34 @@ distinguishes:
 Visibility and purpose inherit down namespace, so the answer is usually authored on an
 ancestor rather than the prim asked about. The walk reports the ancestor.
 
+## Surface beyond tools
+
+Tools are called; resources and prompts are offered. A read-only server should lean on
+the latter two, because most of what a client needs about a stage is context it can pull
+once rather than a question it must think to ask.
+
+**Resources.** Stage facts a client can read without spending a tool call, as URI
+templates parameterised by stage path: the root layer stack in strength order, and a
+stage summary — root prims, default prim, up axis, frame range, and which layers are
+sublayered from where. These duplicate no tool; they front-load what a client would
+otherwise discover by guessing.
+
+**Prompts.** Named workflows for the two questions the tools answer, so the diagnostic
+sequence is offered rather than reconstructed: walking an override that is not taking
+effect, and auditing a shot's layer stack before publish.
+
+Neither surface may report anything a tool could not. A resource that reached beyond the
+stage would be an egress path that never appears in the tool list.
+
+## Module layout
+
+`explain.py` holds pure functions over a stage path and knows nothing about MCP;
+`server.py` registers them. As the surface grows past a handful of tools, registration
+moves to `usd_mcp/tools/<domain>.py`, each module exposing `register(server)` and
+`server.py` staying a list of `register` calls. The reason is the same one that keeps
+`explain.py` transport-free: composition logic that a test can call directly, without a
+server, is logic a test actually covers.
+
 ## Roadmap
 
 Authoring is the destination, not a rejected option. It is staged behind the explainer
@@ -87,6 +138,14 @@ explicit edit target layer and refuses to infer one — guessing the edit target
 failure this server exists to diagnose. Each returns the phase 2 diff for what it did,
 and appends to the audit log. Read-only stays the default because the server defaults
 to it, not because the code cannot write.
+
+That default is structural rather than conventional: every mutating tool takes
+`confirm: bool = False` and, while it is false, writes nothing and returns the phase 2
+diff — the layer the edit would land in, what it would outrank, and which resolved
+values would move. Committing requires a second call with `confirm=True`, which a client
+can only make after showing the diff. The dry run is therefore not a separate tool an
+agent may skip; it is what the write tool does by default. Mutating tools are annotated
+`destructiveHint: true` and are the only tools in the server not annotated read-only.
 
 Two audiences pull differently here and both are served by that ordering. A facility
 needs the safety contract above to clear review at all. A freelancer or solo artist has

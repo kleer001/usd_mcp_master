@@ -79,7 +79,9 @@ def why_not_visible(stage_path, prim_path):
     imageable = UsdGeom.Imageable(prim)
     if not imageable:
         checks["imageable"] = False
-        reasons.append(f"{prim_path} is type {prim.GetTypeName() or '<untyped>'}, not an Imageable.")
+        reasons.append(
+            f"{prim_path} is type {prim.GetTypeName() or '<untyped>'}, not an Imageable."
+        )
         return {"prim": prim_path, "visible": False, "reasons": reasons, "checks": checks}
 
     checks["imageable"] = True
@@ -165,9 +167,10 @@ def _invisible_ancestry(prim):
             continue
         attr = imageable.GetVisibilityAttr()
         if attr.HasAuthoredValue() and attr.Get() == UsdGeom.Tokens.invisible:
-            blockers.append(
-                {"prim": str(ancestor.GetPath()), "authored_in": _authored_in(ancestor, "visibility")}
-            )
+            blockers.append({
+                "prim": str(ancestor.GetPath()),
+                "authored_in": _authored_in(ancestor, "visibility"),
+            })
     return blockers
 
 

@@ -17,7 +17,9 @@ def test_tools_are_registered_read_only():
 
 
 def test_explain_value_round_trips_through_the_tool_layer(shot):
-    result = call("explain_value", stage_path=shot, prim_path="/World/Ball", attribute_name="radius")
+    result = call(
+        "explain_value", stage_path=shot, prim_path="/World/Ball", attribute_name="radius"
+    )
 
     assert result["resolved_value"] == 5
     assert result["authored_opinions"][0]["layer"].endswith("shot.usda")

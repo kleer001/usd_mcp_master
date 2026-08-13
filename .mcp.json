@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "usd-mcp": {
+      "command": "usd-mcp",
+      "args": []
+    }
+  }
+}
