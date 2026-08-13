@@ -178,3 +178,13 @@ def test_active_reports_being_outranked_by_a_stronger_layer(shot, tmp_path):
     assert result["blocked_by"] == "strength"
     assert result["outranked_by"]["layer"].endswith("shot.usda")
     assert result["outranked_by"]["value"] is False
+
+
+def test_authoring_on_an_instance_proxy_is_refused(composed, audit_log):
+    """USD discards an opinion authored at a proxy path, so writing one is a silent no-op."""
+    with pytest.raises(ValueError, match="instance proxy"):
+        set_attribute(composed, "/Set/PropB/Geom", "radius", 4.0, composed, confirm=True)
+    with pytest.raises(ValueError, match="instance proxy"):
+        set_visibility(composed, "/Set/PropB/Geom", False, composed, confirm=True)
+
+    assert entries(audit_log) == []

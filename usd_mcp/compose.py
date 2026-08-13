@@ -116,6 +116,24 @@ def edit_target_verdict(prim, attr, layer):
     Split out so the write path decides with the same code that explains, rather
     than with a second implementation that can drift from it.
     """
+    # An instance proxy has no prim index of its own — it is a view onto the prototype —
+    # so building a resolve target against it raises from deep inside USD. It also cannot
+    # hold an opinion at all, which is the answer worth giving.
+    if prim.IsInstanceProxy():
+        return {
+            "would_win": False,
+            "blocked_by": "instance_proxy",
+            "target_writable": _is_writable(layer),
+            "outranked_by": None,
+            "value_that_would_survive": None,
+            "explanation": (
+                f"{prim.GetPath()} is an instance proxy: it exists only through an ancestor "
+                f"marked `instanceable`, and an opinion authored at this path is discarded "
+                f"whatever layer it goes in. Author on the corresponding prim in the "
+                f"prototype's source, or clear `instanceable` on the ancestor."
+            ),
+        }
+
     writable = _is_writable(layer)
     root_arc = Usd.PrimCompositionQuery(prim).GetCompositionArcs()[0]
     stronger = Usd.AttributeQuery(attr, root_arc.MakeResolveTargetStrongerThan(layer))

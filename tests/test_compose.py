@@ -140,3 +140,15 @@ def test_being_outranked_is_reported_as_a_strength_problem(shot, tmp_path):
 
     assert result["blocked_by"] == "strength"
     assert result["target_writable"] is True
+
+
+def test_an_instance_proxy_cannot_hold_an_opinion_in_any_layer(composed):
+    """A proxy has no prim index of its own, so a resolve target against it raises
+    from inside USD. It also cannot hold an opinion, which is the answer worth giving.
+    """
+    result = explain_edit_target(composed, "/Set/PropB/Geom", "radius", composed)
+
+    assert result["would_win"] is False
+    assert result["blocked_by"] == "instance_proxy"
+    assert result["outranked_by"] is None
+    assert "discarded" in result["explanation"]

@@ -38,6 +38,7 @@ def set_attribute(stage_path, prim_path, attribute_name, value, target_layer, co
     """
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
+    _require_authorable(prim)
     attr = require_attribute(prim, attribute_name)
     layer = _writable_layer(stage, target_layer)
     verdict = edit_target_verdict(prim, attr, layer)
@@ -63,6 +64,7 @@ def set_visibility(stage_path, prim_path, visible, target_layer, confirm=False):
     """
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
+    _require_authorable(prim)
     imageable = UsdGeom.Imageable(prim)
     if not imageable:
         raise ValueError(
@@ -102,6 +104,7 @@ def set_active(stage_path, prim_path, active, target_layer, confirm=False):
     """
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
+    _require_authorable(prim)
     layer = _writable_layer(stage, target_layer)
 
     prior = prim.IsActive()
@@ -192,6 +195,17 @@ def _metadata_verdict(stage, prim, layer, field):
             f"authors `{field}` = {blocker['value']!r} and is stronger."
         ),
     }
+
+
+def _require_authorable(prim):
+    """Refuse a prim that cannot hold an opinion no matter which layer is targeted."""
+    if prim.IsInstanceProxy():
+        raise ValueError(
+            f"{prim.GetPath()} is an instance proxy: it exists only through an ancestor "
+            f"marked `instanceable`, and an opinion authored at this path is discarded "
+            f"whatever layer it goes in. Author on the corresponding prim in the "
+            f"prototype's source, or clear `instanceable` on the ancestor."
+        )
 
 
 def _writable_layer(stage, target_layer):

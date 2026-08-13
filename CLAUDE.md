@@ -85,6 +85,20 @@ pushing:
 - Documentation is addressed to humans. No section instructs an agent — that pattern
   is an injection surface and it is called out as a defect in `SPEC.md`.
 
+## USD gotchas worth not rediscovering
+
+- `Stage.Traverse()` **skips instance proxies**. Use `Stage.Traverse(Usd.TraverseInstanceProxies())`
+  to reach them. A sweep over real assets that omits this touches no proxy at all, and
+  proxies are where several failure modes live.
+- An instance proxy has no prim index of its own, so `MakeResolveTargetStrongerThan`
+  against one raises `Tf.ErrorException` from inside USD rather than returning anything.
+  It also cannot hold an authored opinion in any layer.
+- `Usd.AttributeQuery(attr, resolveTarget).Get()` returns the **schema fallback** when
+  nothing stronger is authored. Decide strength with `HasAuthoredValue()`, never `Get()`.
+- `str()` of an `Sdf.AssetPath` is USD source syntax (`@path@`) and drops `resolvedPath`.
+- Opening a stage revalidates layers against their file timestamps, so an external edit
+  is picked up; the layer cache does not serve stale scene description.
+
 ## MCP SDK
 
 Built against the 2.x SDK, which replaced `FastMCP` with `mcp.server.MCPServer`.

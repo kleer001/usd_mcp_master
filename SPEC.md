@@ -156,17 +156,19 @@ without authoring anything.
 | Field | Meaning |
 |---|---|
 | `would_win` | whether an opinion authored there would actually take effect |
-| `blocked_by` | `null`, `"strength"`, or `"read_only_layer"` |
+| `blocked_by` | `null`, `"strength"`, `"read_only_layer"`, or `"instance_proxy"` |
 | `target_writable` | whether the layer can be committed to at all |
 | `outranked_by` | the layer and value that would beat the edit, or null |
 | `value_that_would_survive` | what the attribute would still resolve to, when the edit loses |
 | `explanation` | the same finding in a sentence |
 
-`would_win` answers whether an edit would take effect, which needs both a writable
-layer and enough strength. A packaged layer — a `.usdz`, and anything inside one —
+`would_win` answers whether an edit would take effect, which needs a writable layer,
+enough strength, and a path that can hold an opinion at all. A packaged layer — a `.usdz`, and anything inside one —
 accepts an edit in memory and then refuses to save it, so strength is the wrong
 question there; reporting it as winning sends a caller to author into a file that
-cannot keep the edit. `blocked_by` separates the two causes.
+cannot keep the edit. An instance proxy is a third case: it has no prim index of its own, so no layer can hold
+an opinion for it — building a resolve target against one raises from inside USD.
+`blocked_by` separates the causes.
 
 Decided by `Usd.CompositionArc.MakeResolveTargetStrongerThan` and `HasAuthoredValue` —
 not by the resolved value, which returns the schema fallback when nothing stronger is
@@ -223,8 +225,9 @@ the prim already has, by authored opinion or by schema; it does not invent prope
 implying it was revealed. `set_active` deactivates a whole subtree — descendants stop
 composing rather than becoming hidden.
 
-Two refusals, both `ValueError`: a target layer outside the root layer stack, and a
-packaged layer, which accepts an edit in memory and then refuses to save it.
+Three refusals, all `ValueError`: a target layer outside the root layer stack; a packaged
+layer, which accepts an edit in memory and then refuses to save it; and a prim that is an
+instance proxy, whose opinions USD discards whatever layer they are authored into.
 
 An edit into a layer something stronger overrides is **applied, not refused**. Authoring
 a losing opinion is legitimate — correcting an asset that a shot overrides is the

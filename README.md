@@ -149,8 +149,9 @@ reference or payload composes somewhere else, where "stronger" means something d
 so the tool raises instead of guessing.
 
 Strength is not the only way an edit fails. A `.usdz` accepts an edit in memory and then
-refuses to save it, so a packaged layer comes back `blocked_by: "read_only_layer"` rather
-than as a winning edit.
+refuses to save it, so a packaged layer comes back `blocked_by: "read_only_layer"`. A prim
+that is an instance proxy comes back `blocked_by: "instance_proxy"` — no layer can hold an
+opinion for it, so USD discards the edit wherever you put it.
 
 ### `resolve_path(stage_path, asset_path, anchor_layer=None)`
 
