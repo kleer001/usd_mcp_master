@@ -129,6 +129,8 @@ no write path to answer.
 {
   "target_layer": "/assets/ball/base.usda",
   "would_win": false,
+  "blocked_by": "strength",
+  "target_writable": true,
   "outranked_by": { "layer": "/shots/010/shot.usda", "value": 5.0 },
   "explanation": "An opinion authored in /assets/ball/base.usda would lose and the resolved value would not change. /shots/010/shot.usda already authors 5.0 and is stronger."
 }
@@ -137,6 +139,10 @@ no write path to answer.
 The target layer must be in the stage's root layer stack. A layer reached through a
 reference or payload composes somewhere else, where "stronger" means something different,
 so the tool raises instead of guessing.
+
+Strength is not the only way an edit fails. A `.usdz` accepts an edit in memory and then
+refuses to save it, so a packaged layer comes back `blocked_by: "read_only_layer"` rather
+than as a winning edit.
 
 ### `resolve_path(stage_path, asset_path, anchor_layer=None)`
 

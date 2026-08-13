@@ -136,10 +136,18 @@ without authoring anything.
 
 | Field | Meaning |
 |---|---|
-| `would_win` | whether any layer stronger than the target already authors this attribute |
+| `would_win` | whether an opinion authored there would actually take effect |
+| `blocked_by` | `null`, `"strength"`, or `"read_only_layer"` |
+| `target_writable` | whether the layer can be committed to at all |
 | `outranked_by` | the layer and value that would beat the edit, or null |
 | `value_that_would_survive` | what the attribute would still resolve to, when the edit loses |
 | `explanation` | the same finding in a sentence |
+
+`would_win` answers whether an edit would take effect, which needs both a writable
+layer and enough strength. A packaged layer — a `.usdz`, and anything inside one —
+accepts an edit in memory and then refuses to save it, so strength is the wrong
+question there; reporting it as winning sends a caller to author into a file that
+cannot keep the edit. `blocked_by` separates the two causes.
 
 Decided by `Usd.CompositionArc.MakeResolveTargetStrongerThan` and `HasAuthoredValue` —
 not by the resolved value, which returns the schema fallback when nothing stronger is

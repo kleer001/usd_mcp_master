@@ -100,6 +100,7 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
     attr = require_attribute(prim, attribute_name)
     layer = _layer_in_root_stack(stage, target_layer)
 
+    writable = _is_writable(layer)
     root_arc = Usd.PrimCompositionQuery(prim).GetCompositionArcs()[0]
     stronger = Usd.AttributeQuery(attr, root_arc.MakeResolveTargetStrongerThan(layer))
 
@@ -118,28 +119,54 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
             "value": plain(winner.default) if winner.HasInfo("default") else None,
         }
 
+    # would_win answers "would an edit here take effect", which needs both a layer that
+    # can be written and enough strength. Reporting strength alone sends a caller to
+    # author into a package it can never save.
+    blocked_by = None if writable else "read_only_layer"
+    if writable and outranked:
+        blocked_by = "strength"
+
     return {
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "target_layer": layer.identifier,
-        "would_win": not outranked,
-        "outranked_by": blocker,
+        "would_win": blocked_by is None,
+        "blocked_by": blocked_by,
+        "target_writable": writable,
+        "outranked_by": blocker if blocked_by == "strength" else None,
         "value_that_would_survive": plain(stronger.Get()) if outranked else None,
         "current_resolved_value": plain(attr.Get()),
-        "explanation": _edit_target_explanation(layer, outranked, blocker),
+        "explanation": _edit_target_explanation(layer, blocked_by, blocker),
         "layer_stack": [candidate.identifier for candidate in root_layer_stack(stage)],
     }
 
 
-def _edit_target_explanation(layer, outranked, blocker):
-    if not outranked:
+def _is_writable(layer):
+    """Whether scene description authored into this layer could ever be committed.
+
+    A packaged layer — a `.usdz` and anything inside one — accepts an edit in memory
+    and refuses to save it: USD raises `writing package usdz layer is not allowed`.
+    Strength is beside the point when the file cannot be written at all.
+    """
+    return not layer.GetFileFormat().IsPackage() and layer.permissionToEdit
+
+
+def _edit_target_explanation(layer, blocked_by, blocker):
+    if blocked_by == "read_only_layer":
         return (
-            f"An opinion authored in {layer.identifier} would win: no layer stronger than "
-            f"it authors this attribute."
+            f"{layer.identifier} cannot be authored into. It is a packaged layer, which "
+            f"accepts an edit in memory and then refuses to save it. Strength is not the "
+            f"problem here — pick a layer outside the package, or repackage the asset."
+        )
+    if blocked_by == "strength":
+        return (
+            f"An opinion authored in {layer.identifier} would lose and the resolved value "
+            f"would not change. {blocker['layer']} already authors {blocker['value']!r} and "
+            f"is stronger."
         )
     return (
-        f"An opinion authored in {layer.identifier} would lose and the resolved value would "
-        f"not change. {blocker['layer']} already authors {blocker['value']!r} and is stronger."
+        f"An opinion authored in {layer.identifier} would win: no layer stronger than it "
+        f"authors this attribute."
     )
 
 

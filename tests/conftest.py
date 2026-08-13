@@ -1,4 +1,5 @@
 import pytest
+from pxr import UsdUtils
 
 BASE_USDA = """#usda 1.0
 
@@ -160,3 +161,17 @@ def composed(tmp_path):
     shot_path = tmp_path / "shot.usda"
     shot_path.write_text(COMPOSED_SHOT_USDA)
     return str(shot_path)
+
+
+@pytest.fixture
+def packaged(tmp_path):
+    """A stage packaged into a .usdz.
+
+    A packaged layer accepts an edit in memory and then refuses to save it, so it is
+    the case where strength is the wrong question entirely.
+    """
+    source = tmp_path / "packaged_source.usda"
+    source.write_text(BASE_USDA)
+    usdz_path = tmp_path / "packaged.usdz"
+    assert UsdUtils.CreateNewUsdzPackage(str(source), str(usdz_path))
+    return str(usdz_path)

@@ -110,3 +110,33 @@ def test_a_layer_outside_the_root_stack_is_refused(shot, tmp_path):
 def test_unknown_attribute_raises(shot):
     with pytest.raises(ValueError, match="no attribute"):
         explain_edit_target(shot, "/World/Ball", "nosuchattr", shot)
+
+
+def test_a_packaged_layer_cannot_be_authored_into(packaged):
+    """Strength is the wrong question when the file can never be written.
+
+    USD accepts the edit in memory and raises `writing package usdz layer is not
+    allowed` on save, so reporting this as a winning edit sends a caller to author
+    into a layer that cannot keep it.
+    """
+    result = explain_edit_target(packaged, "/World/Ball", "radius", packaged)
+
+    assert result["target_writable"] is False
+    assert result["would_win"] is False
+    assert result["blocked_by"] == "read_only_layer"
+    assert result["outranked_by"] is None
+    assert "cannot be authored into" in result["explanation"]
+
+
+def test_a_writable_layer_is_not_blocked(shot):
+    result = explain_edit_target(shot, "/World/Ball", "radius", shot)
+
+    assert result["target_writable"] is True
+    assert result["blocked_by"] is None
+
+
+def test_being_outranked_is_reported_as_a_strength_problem(shot, tmp_path):
+    result = explain_edit_target(shot, "/World/Ball", "radius", str(tmp_path / "base.usda"))
+
+    assert result["blocked_by"] == "strength"
+    assert result["target_writable"] is True
