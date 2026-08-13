@@ -58,3 +58,98 @@ def shot(tmp_path):
     shot_path = tmp_path / "shot.usda"
     shot_path.write_text(SHOT_USDA)
     return str(shot_path)
+
+
+PROP_USDA = """#usda 1.0
+
+def Xform "Prop" (
+    variantSets = "lod"
+    variants = {
+        string lod = "high"
+    }
+)
+{
+    variantSet "lod" = {
+        "high" {
+            double size = 10
+        }
+        "low" {
+            double size = 2
+        }
+    }
+
+    def Sphere "Geom"
+    {
+        double radius = 1
+    }
+}
+"""
+
+PAYLOAD_USDA = """#usda 1.0
+
+def Sphere "Heavy"
+{
+    double radius = 100
+}
+"""
+
+SET_USDA = """#usda 1.0
+
+def Xform "Set"
+{
+    def "PropA" (
+        references = @./prop.usda@</Prop>
+    )
+    {
+    }
+
+    def "PropB" (
+        instanceable = true
+        references = @./prop.usda@</Prop>
+    )
+    {
+    }
+
+    def "Deferred" (
+        payload = @./payload.usda@</Heavy>
+    )
+    {
+    }
+}
+"""
+
+COMPOSED_SHOT_USDA = """#usda 1.0
+(
+    subLayers = [
+        @./set.usda@
+    ]
+)
+
+over "Set"
+{
+    over "PropA" (
+        variants = {
+            string lod = "low"
+        }
+    )
+    {
+    }
+}
+"""
+
+
+@pytest.fixture
+def composed(tmp_path):
+    """A stage exercising every composition arc the explainers report.
+
+    `/Set/PropA` references `prop.usda` and takes its `lod` selection from the shot
+    layer, overriding the asset's own. `/Set/PropB` references the same asset but is
+    `instanceable`, so its descendants are instance proxies. `/Set/Deferred` arrives
+    through a payload.
+    """
+    (tmp_path / "prop.usda").write_text(PROP_USDA)
+    (tmp_path / "payload.usda").write_text(PAYLOAD_USDA)
+    (tmp_path / "set.usda").write_text(SET_USDA)
+    shot_path = tmp_path / "shot.usda"
+    shot_path.write_text(COMPOSED_SHOT_USDA)
+    return str(shot_path)

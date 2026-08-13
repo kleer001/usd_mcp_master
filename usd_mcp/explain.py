@@ -8,16 +8,11 @@ serialise them without a translation step.
 
 from pxr import Sdf, Usd, UsdGeom
 
+from usd_mcp.common import open_stage, plain, require_attribute, require_prim, root_layer_stack
+
 # Visibility and purpose inherit down namespace, so the answer to "why is this
 # invisible" is usually authored on an ancestor, not on the prim asked about.
 _INHERITED_CHECKS = ("visibility", "purpose")
-
-
-def open_stage(stage_path):
-    stage = Usd.Stage.Open(stage_path)
-    if not stage:
-        raise ValueError(f"could not open as a USD stage: {stage_path}")
-    return stage
 
 
 def explain_value(stage_path, prim_path, attribute_name, time_code=None):
@@ -28,10 +23,8 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
     "what did mine lose to".
     """
     stage = open_stage(stage_path)
-    prim = _require_prim(stage, prim_path)
-    attr = prim.GetAttribute(attribute_name)
-    if not attr:
-        raise ValueError(f"{prim_path} has no attribute {attribute_name!r}")
+    prim = require_prim(stage, prim_path)
+    attr = require_attribute(prim, attribute_name)
 
     tc = Usd.TimeCode.Default() if time_code is None else Usd.TimeCode(time_code)
     stack = attr.GetPropertyStack(tc)
@@ -45,11 +38,11 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "type_name": str(attr.GetTypeName()),
-        "resolved_value": _plain(attr.Get(tc)),
+        "resolved_value": plain(attr.Get(tc)),
         "resolved_from": str(resolve_info.GetSource()),
         "time_code": "default" if time_code is None else time_code,
         "authored_opinions": opinions,
-        "layer_stack": [layer.identifier for layer in stage.GetLayerStack()],
+        "layer_stack": [layer.identifier for layer in root_layer_stack(stage)],
     }
 
 
@@ -113,13 +106,6 @@ def why_not_visible(stage_path, prim_path):
     }
 
 
-def _require_prim(stage, prim_path):
-    prim = stage.GetPrimAtPath(prim_path)
-    if not prim:
-        raise ValueError(f"no prim at {prim_path}")
-    return prim
-
-
 def _describe_spec(spec):
     layer = spec.layer
     owner = layer.GetPrimAtPath(spec.path.GetPrimPath())
@@ -129,7 +115,7 @@ def _describe_spec(spec):
         "path": str(spec.path),
         "specifier": str(owner.specifier) if owner else None,
         "has_default": has_default,
-        "value": _plain(spec.default) if has_default else None,
+        "value": plain(spec.default) if has_default else None,
         "time_samples": layer.GetNumTimeSamplesForPath(spec.path),
     }
 
@@ -188,14 +174,3 @@ def _authored_in(prim, attribute_name):
     if not stack:
         return f"no authored `{attribute_name}` opinion."
     return "authored in " + ", ".join(spec.layer.identifier for spec in stack)
-
-
-def _plain(value):
-    """USD values are C++ types; JSON needs Python ones."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, str)):
-        return value
-    if hasattr(value, "__len__") and not isinstance(value, str):
-        return [_plain(item) for item in value]
-    return str(value)

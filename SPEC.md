@@ -52,7 +52,10 @@ alongside `ruff` and the composition tests.
 
 ## Implemented tools
 
-Both are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+All five are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+`explain_value` and `why_not_visible` answer what a value resolved to and why a prim is
+absent; the three below answer the questions underneath those — how a prim was composed
+at all, and where an edit could land.
 
 ### `explain_value(stage_path, prim_path, attribute_name, time_code=None)`
 
@@ -89,33 +92,95 @@ distinguishes:
 Visibility and purpose inherit down namespace, so the answer is usually authored on an
 ancestor rather than the prim asked about. The walk reports the ancestor.
 
+### `explain_prim(stage_path, prim_path)`
+
+The composition arcs that built a prim, strongest first. `explain_value` names the layer
+an opinion sits in; this names how that layer entered the stage, which is what decides
+whether an override is expressible from where you are at all.
+
+| Field | Meaning |
+|---|---|
+| `composition_arcs[].arc_type` | `root`, `reference`, `payload`, `variant`, `inherit`, `specialize`, `relocate` |
+| `composition_arcs[].introducing_layer` | the layer that authored the arc |
+| `composition_arcs[].target_layer` | the layer the arc composes in |
+| `composition_arcs[].target_prim_path` | the path it targets there, e.g. `/Prop{lod=low}` |
+| `composition_arcs[].in_root_layer_stack` | whether the arc is authored somewhere locally editable |
+| `instancing` | `is_instance`, `is_instance_proxy`, `prototype`, and a note when an edit here would be discarded |
+
+Instancing is reported alongside the arcs because it is the other way an override
+vanishes without an error: an opinion authored on an instance proxy is simply dropped.
+
+### `explain_variants(stage_path, prim_path)`
+
+Each variant set on a prim, the selection in force, and every layer authoring a
+selection, strongest first. A variant selection is prim metadata and composes like any
+other opinion, so an asset's own default can be overridden by a shot — or a shot's
+selection can lose to something stronger, silently.
+
+| Field | Meaning |
+|---|---|
+| `variant_sets[].selection` | the selection actually in force |
+| `variant_sets[].variants` | every variant the set offers |
+| `variant_sets[].selected_in[]` | one entry per layer authoring a selection, strongest first, `wins` true for the first |
+
+### `explain_edit_target(stage_path, prim_path, attribute_name, target_layer)`
+
+Whether an opinion authored in `target_layer` would win or silently lose. This is the
+question the roadmap below stages the whole write path behind, and it is answerable
+without authoring anything.
+
+| Field | Meaning |
+|---|---|
+| `would_win` | whether any layer stronger than the target already authors this attribute |
+| `outranked_by` | the layer and value that would beat the edit, or null |
+| `value_that_would_survive` | what the attribute would still resolve to, when the edit loses |
+| `explanation` | the same finding in a sentence |
+
+Decided by `Usd.CompositionArc.MakeResolveTargetStrongerThan` and `HasAuthoredValue` —
+not by the resolved value, which returns the schema fallback when nothing stronger is
+authored and would read as an opinion that does not exist.
+
+`target_layer` must be in the stage's root layer stack. A layer reached through a
+reference or a payload composes into a different layer stack, where strength means
+something else; the tool raises rather than answer a question it was not asked.
+
 ## Surface beyond tools
 
 Tools are called; resources and prompts are offered. A read-only server should lean on
 the latter two, because most of what a client needs about a stage is context it can pull
 once rather than a question it must think to ask.
 
-**Resources.** Stage facts a client can read without spending a tool call, as URI
-templates parameterised by stage path: the root layer stack in strength order, and a
-stage summary — root prims, default prim, up axis, frame range, and which layers are
-sublayered from where. These duplicate no tool; they front-load what a client would
-otherwise discover by guessing.
+**Resources.** `usd://stage/{+stage_path}/layer-stack` is the root layer stack in
+strength order; `usd://stage/{+stage_path}/summary` is the default prim, up axis, metres
+per unit, frame range, and root prims. Both front-load what a client would otherwise
+discover by guessing.
 
-**Prompts.** Named workflows for the two questions the tools answer, so the diagnostic
-sequence is offered rather than reconstructed: walking an override that is not taking
-effect, and auditing a shot's layer stack before publish.
+The SDK rejects absolute paths in resource template parameters by default, and a stage
+path is absolute by nature, so `stage_path` is exempted explicitly. The guard protects a
+server that means to confine resources beneath a root directory. This one has no such
+root: it reads whatever local stage the caller names, exactly as its tools already do,
+so the exemption grants no reach the tool surface does not already have. It is written
+as a named constant rather than an inline flag so that a reader meets the reasoning
+before the exemption.
+
+**Prompts.** `debug_override` walks an override that is not taking effect through the
+tools in the order they most often resolve it, and ends by forbidding a proposed edit
+that `explain_edit_target` says would lose. `audit_layer_stack` reviews what a shot layer
+actually contributes before publish.
 
 Neither surface may report anything a tool could not. A resource that reached beyond the
 stage would be an egress path that never appears in the tool list.
 
 ## Module layout
 
-`explain.py` holds pure functions over a stage path and knows nothing about MCP;
-`server.py` registers them. As the surface grows past a handful of tools, registration
-moves to `usd_mcp/tools/<domain>.py`, each module exposing `register(server)` and
-`server.py` staying a list of `register` calls. The reason is the same one that keeps
-`explain.py` transport-free: composition logic that a test can call directly, without a
-server, is logic a test actually covers.
+`explain.py` and `compose.py` hold pure functions over a stage path and know nothing
+about MCP. `common.py` holds the three things both do before they can say anything —
+open a stage, demand a prim, convert USD's C++ types to Python ones — so they convert at
+one boundary rather than each growing its own. Registration lives in
+`usd_mcp/tools/<domain>.py`, each module exposing `register(server, annotations)`, with
+`resources.py` and `prompts.py` alongside and `server.py` reduced to a list of
+`register` calls. Composition logic that a test can call directly, without a server, is
+logic a test actually covers.
 
 ## Roadmap
 
@@ -126,7 +191,9 @@ A write path built before the explainer produces that failure faster and cannot 
 for it. Built after, every mutation can state where the edit goes and what it will
 outrank before it commits.
 
-**Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`.
+**Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`, `explain_prim`,
+`explain_variants`, `explain_edit_target`. The last of these answers where an edit would
+land without authoring one, which is most of what phase 2 was for.
 
 **Phase 2 — dry run.** `what_would_change_if(layer, edits)`: apply edits to a throwaway
 session layer and report which resolved values move, in the same opinion-stack form

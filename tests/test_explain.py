@@ -68,3 +68,12 @@ def test_guide_purpose_is_reported(shot):
 
     assert result["visible"] is False
     assert "purpose=guide" in result["reasons"][0]
+
+
+def test_a_path_that_is_not_a_stage_raises(tmp_path):
+    """Fail loudly: a wrong answer about composition is worse than an error."""
+    not_a_stage = tmp_path / "notes.txt"
+    not_a_stage.write_text("this is not scene description")
+
+    with pytest.raises(ValueError, match="could not open as a USD stage"):
+        explain_value(str(not_a_stage), "/World/Ball", "radius")

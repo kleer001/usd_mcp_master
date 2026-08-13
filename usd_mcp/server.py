@@ -3,24 +3,27 @@
 
 Read-only by construction: no tool here opens a layer for edit, and the server
 makes no network calls. Stage paths resolve against the filesystem the server
-runs on.
+runs on. This module registers; the explaining happens in `explain.py` and
+`compose.py`, which know nothing about MCP.
 """
 
 import sys
-from typing import Any
 
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from usd_mcp.explain import explain_value as _explain_value
-from usd_mcp.explain import why_not_visible as _why_not_visible
+from usd_mcp import prompts, resources
+from usd_mcp.tools import compose as compose_tools
+from usd_mcp.tools import explain as explain_tools
 
 server = MCPServer(
     name="usd-mcp",
     version="0.1.0",
     instructions=(
         "Explains OpenUSD composition on local stages. Read-only: it never edits a "
-        "layer and never leaves the machine."
+        "layer and never leaves the machine. Before proposing an edit to a stage, call "
+        "explain_edit_target for the layer you mean to author in — USD accepts an edit "
+        "that something stronger overrides, reports no error, and changes nothing."
     ),
 )
 
@@ -28,36 +31,10 @@ server = MCPServer(
 # open_world_hint=False says the answer depends only on the local filesystem.
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False, idempotent_hint=True)
 
-
-@server.tool(annotations=READ_ONLY)
-def explain_value(
-    stage_path: str, prim_path: str, attribute_name: str, time_code: float | None = None
-) -> dict[str, Any]:
-    """Explain why a USD attribute resolves to the value it does.
-
-    Returns every authored opinion in strength order — strongest first — with the
-    layer that authored it and the value it holds, so a losing override can be read
-    against the opinion that beat it.
-
-    Args:
-        stage_path: path to a .usd/.usda/.usdc/.usdz file.
-        prim_path: absolute prim path, e.g. /World/Set/Chair.
-        attribute_name: attribute name, e.g. "radius" or "primvars:displayColor".
-        time_code: sample a specific frame; omit for the default time code.
-    """
-    return _explain_value(stage_path, prim_path, attribute_name, time_code)
-
-
-@server.tool(annotations=READ_ONLY)
-def why_not_visible(stage_path: str, prim_path: str) -> dict[str, Any]:
-    """Explain why a prim does not appear: missing, deactivated, invisible, or
-    excluded by purpose.
-
-    Args:
-        stage_path: path to a .usd/.usda/.usdc/.usdz file.
-        prim_path: absolute prim path, e.g. /World/Set/Chair.
-    """
-    return _why_not_visible(stage_path, prim_path)
+explain_tools.register(server, READ_ONLY)
+compose_tools.register(server, READ_ONLY)
+resources.register(server)
+prompts.register(server)
 
 
 def main():
