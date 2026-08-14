@@ -85,6 +85,24 @@ pushing:
 - Documentation is addressed to humans. No section instructs an agent — that pattern
   is an injection surface and it is called out as a defect in `SPEC.md`.
 
+## Testing against real assets
+
+The fixtures are synthetic and small. Real production assets compose in ways fixtures
+do not, and several bugs here were found only by sweeping them. Two sources, neither
+vendored into this repo:
+
+- `github.com/usd-wg/assets` — openly licensed. `full_assets/` for varied attribute
+  types and broken MaterialX references; `intent-vfx/scenes/` for heavy native
+  instancing (hundreds of instances, thousands of proxies per scene).
+- Pixar's Kitchen Set, linked from `openusd.org/release/dl_kitchen_set.html` behind an
+  EULA for personal, non-commercial testing — read it before downloading. It ships a
+  plain and an instanced build of the same scene, ~230 layers, with variant selections
+  contested across three layers and six-arc composition chains.
+
+A sweep is worth running against the write path too, on a **copy**: author each
+attribute back to its own value and assert nothing raises and every applied mutation
+appears in the audit log exactly once.
+
 ## USD gotchas worth not rediscovering
 
 - `Stage.Traverse()` **skips instance proxies**. Use `Stage.Traverse(Usd.TraverseInstanceProxies())`
