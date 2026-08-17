@@ -22,8 +22,17 @@ def test_tools_are_registered_read_only():
         "explain_variants",
         "explain_edit_target",
         "resolve_path",
+        "diff_stages",
     }
     assert all(tool.annotations.read_only_hint for tool in tools)
+
+
+def test_diff_stages_round_trips_through_the_tool_layer(drifted):
+    a, b = drifted
+    result = call("diff_stages", stage_a=a, stage_b=b, tolerance=1e-3)
+
+    assert result["counts"]["within_tolerance"] == 2
+    assert [c["attribute"] for c in result["attributes_changed"]] == ["primvars:displayColor"]
 
 
 def test_explain_value_round_trips_through_the_tool_layer(shot):

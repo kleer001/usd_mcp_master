@@ -2,8 +2,9 @@
 
 An MCP server that answers the USD questions nobody's tooling answers: **why does this
 attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
-**which variant am I getting**, **if I edit this layer will it even win**, and **which file
-does this asset path actually name**. It can author too, if you ask it to.
+**which variant am I getting**, **if I edit this layer will it even win**, **which file
+does this asset path actually name**, and **what actually changed between these two
+stages**. It can author too, if you ask it to.
 
 It is local-only and has no network path. It is read-only by default: the write path
 is absent unless you start it with `--enable-write`.
@@ -171,6 +172,35 @@ log spew.
   "explanation": "./nosuchfile.usda does not resolve. It was anchored at /shots/010/shot.usda and looked up through ..."
 }
 ```
+
+### `diff_stages(stage_a, stage_b, tolerance=0.0, scope="composed")`
+
+What changed between two stages — prims added, removed, retyped, and attributes changed.
+USD ships `usddiff`, but it runs both files through `usdcat` and hands the text to `diff`;
+the docs call it "currently quite primitive" and note it "does not do any fuzzy numerical
+comparison. The slightest precision difference will cause a diff". So a layer re-exported
+with float noise reads the same as a layer somebody edited.
+
+Here the tolerance is the argument, and what it absorbed is counted rather than hidden:
+
+```jsonc
+{
+  "identical": false,
+  "tolerance": 0.001,
+  "prims_added": [{"path": "/World/Added", "type_name": "Sphere"}],
+  "prims_retyped": [{"path": "/World/Prop", "type_name_a": "Sphere", "type_name_b": "Cube"}],
+  "attributes_changed": [
+    {"prim": "/World/Ball", "attribute": "primvars:displayColor",
+     "value_a": [[1, 0, 0]], "value_b": [[0, 1, 0]], "time_samples": null}
+  ],
+  "counts": {"attributes_changed": 1, "within_tolerance": 42}
+}
+```
+
+Forty-two differences were noise and one was an edit. `scope="composed"` compares what the
+two stages resolve to, instanced geometry included; `scope="layer"` compares only what the
+two files themselves author, which is what you want when the stage around them did not
+change.
 
 ## Resources and prompts
 

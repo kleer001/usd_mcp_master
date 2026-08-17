@@ -1,6 +1,6 @@
 # usd_mcp — working notes
 
-A read-only MCP server that explains OpenUSD composition, and authors into them when asked: six read-only
+A read-only MCP server that explains OpenUSD composition, and authors into them when asked: seven read-only
 tools, three opt-in mutating tools, two resources, two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
 safety posture, tool surface, and the phased roadmap.
 
@@ -12,26 +12,29 @@ usd_mcp/
   explain.py   value and visibility explainers; pure functions over a stage path
   compose.py   arc, variant, and edit-target explainers; likewise pure
   resolve.py   asset-path resolution; the only module that touches Ar
+  diff.py      stage comparison with numeric tolerance; composed or per-layer
   write.py     the ONLY module that authors; everything else reads
   tools/       registration only, one module per domain, each with register(server, annotations)
   resources.py stage facts as URI templates
   prompts.py   named diagnostic sequences
   server.py    build_server(enable_write=False); registration only, plus argparse
 tests/
-  conftest.py  builds a two-layer stage (shot.usda sublayers base.usda) in tmp_path
+  conftest.py  builds the stages every test composes against, in tmp_path
   test_explain.py  the value and visibility explainers, called directly
   test_compose.py  the arc, variant, and edit-target explainers, called directly
+  test_diff.py     the stage diff, both scopes, called directly
   test_server.py   the same behaviour through the MCP tool layer
   test_resources.py / test_prompts.py  the non-tool surfaces
   test_write.py    the write path, including that a dry run writes nothing
   test_safety_contract.py  parses usd_mcp/ and asserts the SPEC.md safety contract
 ```
 
-`conftest.py` builds two stages: `shot` (a shot layer sublayering an asset layer) for
-strength-ordering questions, and `composed` (references, a payload, a variant set, and an
-instanced prim) for arc questions.
+`conftest.py` builds three fixtures: `shot` (a shot layer sublayering an asset layer) for
+strength-ordering questions, `composed` (references, a payload, a variant set, and an
+instanced prim) for arc questions, and `drifted` (a pair of stages differing by both
+float noise and real edits) for the diff.
 
-The split matters: `explain.py` and `compose.py` know nothing about MCP, so the logic is
+The split matters: `explain.py`, `compose.py`, and `diff.py` know nothing about MCP, so the logic is
 testable without a transport and reusable outside one. Keep new USD logic there, put
 registration in `tools/`, and let `server.py` stay a list of `register` calls.
 
@@ -113,6 +116,9 @@ appears in the audit log exactly once.
   It also cannot hold an authored opinion in any layer.
 - `Usd.AttributeQuery(attr, resolveTarget).Get()` returns the **schema fallback** when
   nothing stronger is authored. Decide strength with `HasAuthoredValue()`, never `Get()`.
+- An attribute with time samples and no authored default resolves to its **schema
+  fallback** at `Usd.TimeCode.Default()`, not to its first sample. Two stages whose
+  animation differs compare equal at default time; the sample series is what differs.
 - `str()` of an `Sdf.AssetPath` is USD source syntax (`@path@`) and drops `resolvedPath`.
 - Opening a stage revalidates layers against their file timestamps, so an external edit
   is picked up; the layer cache does not serve stale scene description.

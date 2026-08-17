@@ -33,6 +33,22 @@ def open_stage(stage_path, load_payloads=True):
     return stage
 
 
+def open_layer(layer_path):
+    """Open a single layer as authored, or raise `ValueError` naming what went wrong.
+
+    `open_stage` composes; this does not. A per-layer diff asks what one file says,
+    which is a different question from what the stage resolved to, and composing to
+    answer it would fold in every sublayer and reference the file happens to name.
+    """
+    try:
+        layer = Sdf.Layer.FindOrOpen(layer_path)
+    except Tf.ErrorException as error:
+        raise ValueError(f"could not open as a USD layer: {layer_path}: {error}") from error
+    if not layer:
+        raise ValueError(f"could not open as a USD layer: {layer_path}")
+    return layer
+
+
 def require_prim(stage, prim_path):
     prim = stage.GetPrimAtPath(prim_path)
     if not prim:

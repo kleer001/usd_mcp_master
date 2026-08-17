@@ -190,3 +190,71 @@ def packaged(tmp_path):
     usdz_path = tmp_path / "packaged.usdz"
     assert UsdUtils.CreateNewUsdzPackage(str(source), str(usdz_path))
     return str(usdz_path)
+
+
+DRIFT_A_USDA = """#usda 1.0
+
+def Xform "World"
+{
+    def Sphere "Ball"
+    {
+        double radius = 1
+        color3f[] primvars:displayColor = [(1, 0, 0)]
+        double spin.timeSamples = {
+            1: 0,
+            2: 10,
+        }
+    }
+
+    def Sphere "Gone"
+    {
+        double radius = 2
+    }
+
+    def Sphere "Retyped"
+    {
+    }
+}
+"""
+
+DRIFT_B_USDA = """#usda 1.0
+
+def Xform "World"
+{
+    def Sphere "Ball"
+    {
+        double radius = 1.0000001
+        color3f[] primvars:displayColor = [(0, 1, 0)]
+        double spin.timeSamples = {
+            1: 0,
+            2: 10.0000001,
+        }
+    }
+
+    def Cube "Retyped"
+    {
+    }
+
+    def Sphere "Added"
+    {
+        double radius = 3
+    }
+}
+"""
+
+
+@pytest.fixture
+def drifted(tmp_path):
+    """Two single-layer stages differing by both float noise and real edits.
+
+    `/World/Ball` carries a radius and an animated `spin` that moved by 1e-7 — the
+    signature of a re-export — alongside a display colour that actually changed.
+    `/World/Gone` is absent from the second, `/World/Added` is new, and
+    `/World/Retyped` changed type. Single-layer so the composed and per-layer scopes
+    have the same material to work on.
+    """
+    a = tmp_path / "drift_a.usda"
+    b = tmp_path / "drift_b.usda"
+    a.write_text(DRIFT_A_USDA)
+    b.write_text(DRIFT_B_USDA)
+    return str(a), str(b)

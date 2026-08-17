@@ -65,10 +65,11 @@ same commit as the clause above it changes. These run in CI against Python 3.10 
 
 ## Implemented tools
 
-All six are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+All seven are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
 `explain_value` and `why_not_visible` answer what a value resolved to and why a prim is
-absent; the three below answer the questions underneath those — how a prim was composed
-at all, and where an edit could land.
+absent; the three after them answer the questions underneath those — how a prim was
+composed at all, and where an edit could land. `resolve_path` and `diff_stages` ask about
+files rather than opinions: which one an asset path names, and what changed between two.
 
 ### `explain_value(stage_path, prim_path, attribute_name, time_code=None)`
 
@@ -201,6 +202,42 @@ root would answer a question nobody asked.
 safety contract's denylist names `CreateIdentifierForNewAsset` and `ResolveForNewAsset`,
 which are.
 
+### `diff_stages(stage_a, stage_b, tolerance=0.0, scope="composed")`
+
+What changed between two stages, with numbers compared against a tolerance instead of a
+text diff of their serialisations.
+
+| Field | Meaning |
+|---|---|
+| `identical` | true when nothing differs outside the tolerance |
+| `prims_added` / `prims_removed` | prims present in only one of the two, with their type |
+| `prims_retyped` | prims in both whose `typeName` differs |
+| `attributes_changed[]` | one entry per differing attribute |
+| `attributes_changed[].value_a` / `value_b` | the value at default time on each side |
+| `attributes_changed[].authored_a` / `authored_b` | false when that side authors no opinion at all, in which case its value is reported as null rather than as the schema fallback |
+| `attributes_changed[].time_samples` | null when neither side is animated; otherwise the sample count on each side and the earliest time the two series part |
+| `counts.within_tolerance` | differences the tolerance absorbed |
+
+`tolerance` is an absolute bound applied to every number compared — vector and matrix
+components, array elements, and time sample times included. Zero is exact equality. The
+absorbed differences are counted rather than dropped, because "was this a real edit or a
+re-export" is the question being asked and a silent zero would not answer it.
+
+`scope="composed"` opens both stages and compares what they resolve to. It traverses
+instance proxies: a change inside an instanced asset lives nowhere else on a composed
+stage, and `Stage.Traverse()` skips proxies by default, so a diff built on the default
+predicate would report two such stages as identical. `scope="layer"` opens one file each
+as authored, without composing, and compares only what that file says — the question
+after a re-export, and the one where a prim under a deactivated ancestor still counts.
+
+Attributes are compared at default time and, when either side carries time samples,
+sample by sample. An animated attribute with no authored default resolves to its schema
+fallback at default time on both sides, so a default-time comparison alone would call two
+different curves identical.
+
+Raises `ValueError` on a negative tolerance, an unknown scope, or a file that does not
+open.
+
 ## Write tools
 
 Registered only under `--enable-write`, annotated `readOnlyHint: false` and
@@ -264,7 +301,7 @@ stage would be an egress path that never appears in the tool list.
 
 ## Module layout
 
-`explain.py` and `compose.py` hold pure functions over a stage path and know nothing
+`explain.py`, `compose.py`, and `diff.py` hold pure functions over a stage path and know nothing
 about MCP. `common.py` holds the three things both do before they can say anything —
 open a stage, demand a prim, convert USD's C++ types to Python ones — so they convert at
 one boundary rather than each growing its own. Registration lives in
@@ -283,7 +320,7 @@ for it. Built after, every mutation can state where the edit goes and what it wi
 outrank before it commits.
 
 **Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`, `explain_prim`,
-`explain_variants`, `explain_edit_target`, `resolve_path`. The last of these answers where an edit would
+`explain_variants`, `explain_edit_target`, `resolve_path`, `diff_stages`. The last of these answers where an edit would
 land without authoring one, which is most of what phase 2 was for.
 
 **Phase 2 — dry run (absorbed).** A separate `what_would_change_if` was not built.
@@ -316,12 +353,6 @@ Houdini. Inside a DCC, an MCP server for that application is the better instrume
 
 Diagnostics that fit the read-only shape, in the order they'd earn their place:
 
-- `diff_stages(a, b, tolerance)` — prims added, removed, retyped, and attributes changed,
-  composed or per-layer. USD ships `usddiff`, but it `usdcat`s both files and hands the
-  text to `diff`; the official docs call it "currently quite primitive" and note it "does
-  not do any fuzzy numerical comparison. The slightest precision difference will cause a
-  diff" ([USD toolset](https://openusd.org/release/toolset.html)). A re-exported layer with
-  float noise is therefore indistinguishable from a real edit.
 - `profile_stage(stage_path)` — time dependencies, prims per layer, payload and instancing
   coverage. SideFX staff have noted that a node time-dependent only to set a file path can
   "end up causing huge amounts of your LOP network to re-cook on every frame"
