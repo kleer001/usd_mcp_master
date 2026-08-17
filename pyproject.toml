@@ -1,6 +1,6 @@
 [project]
 name = "usd-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Read-only MCP server that explains OpenUSD composition"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=2.0.0",
-    "usd-core",
+    "usd-core>=26.8",
 ]
 
 [project.urls]
