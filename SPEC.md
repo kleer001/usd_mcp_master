@@ -65,12 +65,13 @@ same commit as the clause above it changes. These run in CI against Python 3.10 
 
 ## Implemented tools
 
-All eight are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+All nine are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
 `explain_value` and `why_not_visible` answer what a value resolved to and why a prim is
 absent; the three after them answer the questions underneath those — how a prim was
 composed at all, and where an edit could land. `resolve_path` and `diff_stages` ask about
 files rather than opinions: which one an asset path names, and what changed between two.
-`profile_stage` asks what the whole stage costs.
+`profile_stage` asks what the whole stage costs, and `check_portability` whether
+anybody else can read its shading.
 
 ### `explain_value(stage_path, prim_path, attribute_name, time_code=None)`
 
@@ -273,6 +274,51 @@ nothing. Nothing in USD warns about it, because nothing in USD is wrong.
 `load_payloads` must match the session being asked about; a profile with payloads loaded
 describes a scene the artist who deferred them is not paying for.
 
+### `check_portability(stage_path, target)`
+
+Whether the destination host can read the stage's shading, per material.
+
+| Field | Meaning |
+|---|---|
+| `render_context` | the context token `target` resolved to |
+| `readable` | true when every material is `native` or `preview_fallback` |
+| `materials[].verdict` | `native`, `preview_fallback`, `renderer_specific`, or `unreadable` |
+| `materials[].contexts` | every render context the material authors a *connected* terminal output for |
+| `materials[].terminals` | per terminal (surface, displacement, volume): what the target resolves, the shaders behind it, and whether it got there by falling back |
+| `materials[].terminals[].shaders[].registered_here` | whether this USD build has a plugin defining that shader id |
+| `findings[]` | the same verdicts said in words, with the paths |
+
+The four verdicts are four different situations:
+
+- **`native`** — the target's own context has a connected terminal output. The author
+  declared this network for this context, so shaders outside the portable set are the
+  point rather than a problem.
+- **`preview_fallback`** — nothing authored for the target, so it falls back to the
+  universal output, which is `UsdPreviewSurface` throughout. It renders, but as a preview
+  surface rather than as the look that was authored.
+- **`renderer_specific`** — it falls back to a universal output wired outside the
+  `UsdPreviewSurface` set. Whether the target reads those shaders depends on plugins this
+  cannot see, and a universal output is claiming a portability it may not have.
+- **`unreadable`** — nothing resolves for the target at all.
+
+`target` names a render context: a host name (`renderman`, `arnold`, `storm`,
+`materialx`, `preview`) or the token itself (`ri`, `arnold`, `glslfx`, `mtlx`,
+`universal`). An unrecognised target raises. Each token here was taken from a primary
+source — `ri` is `UsdRi.Tokens.renderContext` in USD, `glslfx` appears as
+`outputs:glslfx:surface` in USD's render user guide, `arnold` as `outputs:arnold:surface`
+in arnold-usd, `mtlx` in USD's MaterialX architecture guide — and passing an unverified
+token through would produce a confident answer about a host nobody checked.
+
+`PREVIEW_SURFACE_NODES` is the [UsdPreviewSurface
+specification](https://openusd.org/release/spec_usdpreviewsurface.html)'s complete node
+set. `test_portability.py` pins it against `Sdr.Registry`, so a node added to the spec
+fails the build rather than quietly reading as renderer-specific.
+
+An output exists as soon as anything asks USD for one, so existence is not a provision —
+only a connected source is. Networks are walked through their connections rather than by
+namespace, so a texture two hops down still counts, and a node graph in the middle is
+walked through rather than reported.
+
 ## Write tools
 
 Registered only under `--enable-write`, annotated `readOnlyHint: false` and
@@ -336,8 +382,8 @@ stage would be an egress path that never appears in the tool list.
 
 ## Module layout
 
-`explain.py`, `compose.py`, `diff.py`, and `profile.py` hold pure functions over a
-stage path and know nothing
+`explain.py`, `compose.py`, `diff.py`, `profile.py`, and `portability.py` hold pure
+functions over a stage path and know nothing
 about MCP. `common.py` holds the three things both do before they can say anything —
 open a stage, demand a prim, convert USD's C++ types to Python ones — so they convert at
 one boundary rather than each growing its own. Registration lives in
@@ -357,7 +403,7 @@ outrank before it commits.
 
 **Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`, `explain_prim`,
 `explain_variants`, `explain_edit_target`, `resolve_path`, `diff_stages`,
-`profile_stage`. The last of these answers where an edit would
+`profile_stage`, `check_portability`. The last of these answers where an edit would
 land without authoring one, which is most of what phase 2 was for.
 
 **Phase 2 — dry run (absorbed).** A separate `what_would_change_if` was not built.
@@ -385,11 +431,3 @@ agent may skip; it is what the write tool does by default. Mutating tools are an
 Standalone USD authoring earns its keep where no DCC is in the loop: headless batch
 fixes across many layers, pipeline and TD work, CI, repairing a shot without opening
 Houdini. Inside a DCC, an MCP server for that application is the better instrument.
-
-## Not implemented
-
-Diagnostics that fit the read-only shape, in the order they'd earn their place:
-
-- `check_portability(stage_path, target)` — which shading nodes the destination host can
-  actually read. Renderer-specific shaders survive into USD intact and mean nothing at the
-  far end, and nothing warns you before the handoff.

@@ -24,6 +24,7 @@ def test_tools_are_registered_read_only():
         "resolve_path",
         "diff_stages",
         "profile_stage",
+        "check_portability",
     }
     assert all(tool.annotations.read_only_hint for tool in tools)
 
@@ -41,6 +42,13 @@ def test_profile_stage_round_trips_through_the_tool_layer(profiled):
 
     assert result["prims"]["unloaded_payloads"] == 1
     assert any("never changes" in note for note in result["findings"])
+
+
+def test_check_portability_round_trips_through_the_tool_layer(looks):
+    result = call("check_portability", stage_path=looks, target="arnold")
+
+    assert result["render_context"] == "arnold"
+    assert result["summary"]["unreadable"] == 2
 
 
 def test_explain_value_round_trips_through_the_tool_layer(shot):

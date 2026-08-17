@@ -311,3 +311,90 @@ def profiled(tmp_path):
     shot_path = tmp_path / "shot.usda"
     shot_path.write_text(PROFILE_SHOT_USDA)
     return str(shot_path)
+
+
+LOOKS_USDA = """#usda 1.0
+
+def Scope "Looks"
+{
+    def Material "Portable"
+    {
+        token outputs:surface.connect = </Looks/Portable/Surface.outputs:surface>
+        token outputs:displacement
+
+        def Shader "Surface"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor.connect = </Looks/Portable/Texture.outputs:rgb>
+            color3f inputs:specularColor.connect = </Looks/Portable/Texture.outputs:rgb>
+            token outputs:surface
+        }
+
+        def Shader "Texture"
+        {
+            uniform token info:id = "UsdUVTexture"
+            asset inputs:file = @./tex.exr@
+            float3 outputs:rgb
+        }
+    }
+
+    def Material "Both"
+    {
+        token outputs:surface.connect = </Looks/Both/Preview.outputs:surface>
+        token outputs:ri:surface.connect = </Looks/Both/Pxr.outputs:surface>
+
+        def Shader "Preview"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            token outputs:surface
+        }
+
+        def Shader "Pxr"
+        {
+            uniform token info:id = "PxrSurface"
+            token outputs:surface
+        }
+    }
+
+    def Material "RiOnly"
+    {
+        token outputs:ri:surface.connect = </Looks/RiOnly/Pxr.outputs:surface>
+
+        def Shader "Pxr"
+        {
+            uniform token info:id = "PxrSurface"
+            token outputs:surface
+        }
+    }
+
+    def Material "Mislabelled"
+    {
+        token outputs:surface.connect = </Looks/Mislabelled/Pxr.outputs:surface>
+
+        def Shader "Pxr"
+        {
+            uniform token info:id = "PxrSurface"
+            token outputs:surface
+        }
+    }
+
+    def Material "Empty"
+    {
+    }
+}
+"""
+
+
+@pytest.fixture
+def looks(tmp_path):
+    """Five materials covering every way a handoff survives or fails.
+
+    `Portable` provides only the universal `UsdPreviewSurface` network, reusing one
+    texture across two inputs and declaring a displacement output it never connects. `Both` provides
+    that and a RenderMan one. `RiOnly` provides RenderMan and nothing else. `Mislabelled`
+    wires a renderer's own shader to the universal output, promising a portability it
+    does not have. `Empty` authors no terminal at all.
+    """
+    stage_path = tmp_path / "looks.usda"
+    stage_path.write_text(LOOKS_USDA)
+    return str(stage_path)

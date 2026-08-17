@@ -1,6 +1,6 @@
 # usd_mcp — working notes
 
-A read-only MCP server that explains OpenUSD composition, and authors into them when asked: eight read-only
+A read-only MCP server that explains OpenUSD composition, and authors into them when asked: nine read-only
 tools, three opt-in mutating tools, two resources, two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
 safety posture, tool surface, and the phased roadmap.
 
@@ -14,6 +14,7 @@ usd_mcp/
   resolve.py   asset-path resolution; the only module that touches Ar
   diff.py      stage comparison with numeric tolerance; composed or per-layer
   profile.py   layer, payload, instancing, and time cost, and the traps they imply
+  portability.py  can the destination host read this shading; render contexts
   write.py     the ONLY module that authors; everything else reads
   tools/       registration only, one module per domain, each with register(server, annotations)
   resources.py stage facts as URI templates
@@ -25,20 +26,21 @@ tests/
   test_compose.py  the arc, variant, and edit-target explainers, called directly
   test_diff.py     the stage diff, both scopes, called directly
   test_profile.py  the stage profiler and every finding it emits
+  test_portability.py  the shading portability check, one verdict per material
   test_server.py   the same behaviour through the MCP tool layer
   test_resources.py / test_prompts.py  the non-tool surfaces
   test_write.py    the write path, including that a dry run writes nothing
   test_safety_contract.py  parses usd_mcp/ and asserts the SPEC.md safety contract
 ```
 
-`conftest.py` builds four fixtures: `shot` (a shot layer sublayering an asset layer) for
+`conftest.py` builds five fixtures: `shot` (a shot layer sublayering an asset layer) for
 strength-ordering questions, `composed` (references, a payload, a variant set, and an
 instanced prim) for arc questions, and `drifted` (a pair of stages differing by both
 float noise and real edits) for the diff, and `profiled` (instancing, a deferred
-payload, and animation that never changes) for the profiler.
+payload, and animation that never changes) for the profiler, and `looks` (a material
+per portability verdict) for the portability check.
 
-The split matters: `explain.py`, `compose.py`, `diff.py`, and `profile.py` know nothing
-about MCP, so the logic is
+The split matters: every module above `tools/` knows nothing about MCP, so the logic is
 testable without a transport and reusable outside one. Keep new USD logic there, put
 registration in `tools/`, and let `server.py` stay a list of `register` calls.
 
@@ -129,6 +131,11 @@ appears in the audit log exactly once.
 - An attribute with time samples and no authored default resolves to its **schema
   fallback** at `Usd.TimeCode.Default()`, not to its first sample. Two stages whose
   animation differs compare equal at default time; the sample series is what differs.
+- `UsdShadeMaterial.ComputeSurfaceSource(context)` already falls back to the universal
+  context, so a non-null result does not mean the material authored anything for that
+  context. Check `GetOutput(f"{context}:surface").HasConnectedSource()` for that. An
+  output also exists as soon as anything asks USD for one; only a connected source is
+  a provision.
 - `str()` of an `Sdf.AssetPath` is USD source syntax (`@path@`) and drops `resolvedPath`.
 - Opening a stage revalidates layers against their file timestamps, so an external edit
   is picked up; the layer cache does not serve stale scene description.

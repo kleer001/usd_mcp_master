@@ -4,7 +4,8 @@ An MCP server that answers the USD questions nobody's tooling answers: **why doe
 attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
 **which variant am I getting**, **if I edit this layer will it even win**, **which file
 does this asset path actually name**, **what actually changed between these two
-stages**, and **why is this stage so expensive**. It can author too, if you ask it to.
+stages**, **why is this stage so expensive**, and **will anyone else's renderer read this
+shading**. It can author too, if you ask it to.
 
 It is local-only and has no network path. It is read-only by default: the write path
 is absent unless you start it with `--enable-write`.
@@ -229,6 +230,40 @@ and nothing warns you, because nothing is wrong.
 Counts include instance proxies and prims whose payload was never loaded. USD's default
 traversal predicate skips both, which between them hide most of an instanced set and every
 deferred payload.
+
+### `check_portability(stage_path, target)`
+
+Whether the destination host can read the stage's shading. A renderer-specific shader
+survives into USD intact — `PxrSurface` is valid scene description any USD build will
+open, parse, and show you in `usdview` as nothing. The failure lands at the far end of a
+handoff, on somebody else's schedule.
+
+USD's own answer is the render context: a material carries one terminal output per
+context, and a host reads the one it recognises. This asks what your target would
+actually resolve.
+
+```jsonc
+{
+  "render_context": "arnold",
+  "readable": false,
+  "materials": [
+    {"material": "/Looks/Skin", "verdict": "preview_fallback", "contexts": ["", "ri"]},
+    {"material": "/Looks/Glass", "verdict": "unreadable", "contexts": ["ri"]}
+  ],
+  "findings": [
+    "1 of 2 materials resolve to nothing at all for arnold. Author a terminal for this context or bind a UsdPreviewSurface network to the universal output before handing the stage over. (/Looks/Glass)"
+  ]
+}
+```
+
+`native` means the target's own context is authored. `preview_fallback` means it renders
+as a preview surface rather than as the look you built. `renderer_specific` means the
+universal output is wired outside the portable set and only some hosts will read it.
+`unreadable` means nothing resolves.
+
+`target` takes a host name — `renderman`, `arnold`, `storm`, `materialx`, `preview` — or
+the render context token itself. An unrecognised target raises rather than guess at a
+context nobody verified.
 
 ## Resources and prompts
 
