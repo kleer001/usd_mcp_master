@@ -20,6 +20,7 @@ from usd_mcp import prompts, resources
 from usd_mcp.tools import compose as compose_tools
 from usd_mcp.tools import diff as diff_tools
 from usd_mcp.tools import explain as explain_tools
+from usd_mcp.tools import profile as profile_tools
 from usd_mcp.tools import resolve as resolve_tools
 from usd_mcp.tools import write as write_tools
 
@@ -62,6 +63,7 @@ def build_server(enable_write=False):
     compose_tools.register(server, READ_ONLY)
     resolve_tools.register(server, READ_ONLY)
     diff_tools.register(server, READ_ONLY)
+    profile_tools.register(server, READ_ONLY)
     resources.register(server)
     prompts.register(server, enable_write)
 

@@ -65,11 +65,12 @@ same commit as the clause above it changes. These run in CI against Python 3.10 
 
 ## Implemented tools
 
-All seven are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
+All eight are annotated `readOnlyHint: true`, `openWorldHint: false`, `idempotentHint: true`.
 `explain_value` and `why_not_visible` answer what a value resolved to and why a prim is
 absent; the three after them answer the questions underneath those — how a prim was
 composed at all, and where an edit could land. `resolve_path` and `diff_stages` ask about
 files rather than opinions: which one an asset path names, and what changed between two.
+`profile_stage` asks what the whole stage costs.
 
 ### `explain_value(stage_path, prim_path, attribute_name, time_code=None)`
 
@@ -238,6 +239,40 @@ different curves identical.
 Raises `ValueError` on a negative tolerance, an unknown scope, or a file that does not
 open.
 
+### `profile_stage(stage_path, load_payloads=True)`
+
+Where a stage's cost sits, and the traps the numbers imply.
+
+| Field | Meaning |
+|---|---|
+| `layers[]` | every layer the stage uses, heaviest first, session layer excluded |
+| `layers[].prim_specs` / `attribute_specs` | what that file authors, composition aside, variant contents included |
+| `layers[].time_sampled_specs` | attribute specs in that layer carrying time samples |
+| `layers[].constant_time_sampled_specs` | of those, the ones whose every sample holds the same value |
+| `prims` | composed counts: total, instance proxies, instances, instanceable, payloads and how many are unloaded |
+| `instancing` | prototypes, and `proxy_share` — the fraction of composed prims that are instance proxies |
+| `time` | the stage's frame range, whether it is authored at all, and the time sample totals |
+| `findings[]` | the traps, in words: constant animation, animation with no frame range, deferred payloads |
+
+Counted from scene description per layer rather than from the composed stage, because
+the question is what each file costs to read: a layer contributes its specs whether or
+not something stronger overrides them. A variant's contents hang off the variant set
+rather than off the prim namespace, and count too — `Sdf.Layer.Traverse` reaches them
+where walking `nameChildren` does not.
+
+The composed traversal includes instance proxies and prims whose payload is unloaded.
+`UsdPrimDefaultPredicate` demands `PrimIsLoaded` and skips proxies, which between them
+hide most of an instanced set and every deferred payload — the two things this tool is
+for.
+
+`constant_time_sampled_specs` is the finding worth acting on. An attribute authored with
+time samples makes everything downstream of it time-dependent whether or not the samples
+differ, so an asset path written once per frame costs a re-cook per frame and buys
+nothing. Nothing in USD warns about it, because nothing in USD is wrong.
+
+`load_payloads` must match the session being asked about; a profile with payloads loaded
+describes a scene the artist who deferred them is not paying for.
+
 ## Write tools
 
 Registered only under `--enable-write`, annotated `readOnlyHint: false` and
@@ -301,7 +336,8 @@ stage would be an egress path that never appears in the tool list.
 
 ## Module layout
 
-`explain.py`, `compose.py`, and `diff.py` hold pure functions over a stage path and know nothing
+`explain.py`, `compose.py`, `diff.py`, and `profile.py` hold pure functions over a
+stage path and know nothing
 about MCP. `common.py` holds the three things both do before they can say anything —
 open a stage, demand a prim, convert USD's C++ types to Python ones — so they convert at
 one boundary rather than each growing its own. Registration lives in
@@ -320,7 +356,8 @@ for it. Built after, every mutation can state where the edit goes and what it wi
 outrank before it commits.
 
 **Phase 1 — explain (implemented).** `explain_value`, `why_not_visible`, `explain_prim`,
-`explain_variants`, `explain_edit_target`, `resolve_path`, `diff_stages`. The last of these answers where an edit would
+`explain_variants`, `explain_edit_target`, `resolve_path`, `diff_stages`,
+`profile_stage`. The last of these answers where an edit would
 land without authoring one, which is most of what phase 2 was for.
 
 **Phase 2 — dry run (absorbed).** A separate `what_would_change_if` was not built.
@@ -353,11 +390,6 @@ Houdini. Inside a DCC, an MCP server for that application is the better instrume
 
 Diagnostics that fit the read-only shape, in the order they'd earn their place:
 
-- `profile_stage(stage_path)` — time dependencies, prims per layer, payload and instancing
-  coverage. SideFX staff have noted that a node time-dependent only to set a file path can
-  "end up causing huge amounts of your LOP network to re-cook on every frame"
-  ([SideFX forum](https://www.sidefx.com/forum/topic/83026/)); that trap is invisible until
-  something is slow.
 - `check_portability(stage_path, target)` — which shading nodes the destination host can
   actually read. Renderer-specific shaders survive into USD intact and mean nothing at the
   far end, and nothing warns you before the handoff.

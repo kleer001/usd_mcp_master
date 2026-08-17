@@ -3,8 +3,8 @@
 An MCP server that answers the USD questions nobody's tooling answers: **why does this
 attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
 **which variant am I getting**, **if I edit this layer will it even win**, **which file
-does this asset path actually name**, and **what actually changed between these two
-stages**. It can author too, if you ask it to.
+does this asset path actually name**, **what actually changed between these two
+stages**, and **why is this stage so expensive**. It can author too, if you ask it to.
 
 It is local-only and has no network path. It is read-only by default: the write path
 is absent unless you start it with `--enable-write`.
@@ -201,6 +201,34 @@ Forty-two differences were noise and one was an edit. `scope="composed"` compare
 two stages resolve to, instanced geometry included; `scope="layer"` compares only what the
 two files themselves author, which is what you want when the stage around them did not
 change.
+
+### `profile_stage(stage_path, load_payloads=True)`
+
+Where a stage's cost sits: prim and attribute specs per layer, payload and instancing
+coverage, the frame range, and a findings list naming what the numbers imply.
+
+The one worth the tool on its own: an attribute authored with time samples makes
+everything downstream of it time-dependent whether or not the samples differ. A texture
+path written once per frame at the same value costs a re-cook per frame and buys nothing,
+and nothing warns you, because nothing is wrong.
+
+```jsonc
+{
+  "layers": [
+    {"layer": "/assets/chair/chair.usda", "prim_specs": 412, "attribute_specs": 1580,
+     "time_sampled_specs": 96, "constant_time_sampled_specs": 94}
+  ],
+  "prims": {"total": 6214, "instance_proxies": 5980, "with_payload": 12, "unloaded_payloads": 0},
+  "instancing": {"prototypes": 8, "proxy_share": 0.9623},
+  "findings": [
+    "94 attribute specs carry time samples whose value never changes. Each one makes everything downstream of it time-dependent and buys nothing; /assets/chair/chair.usda holds 94 of them."
+  ]
+}
+```
+
+Counts include instance proxies and prims whose payload was never loaded. USD's default
+traversal predicate skips both, which between them hide most of an instanced set and every
+deferred payload.
 
 ## Resources and prompts
 

@@ -37,6 +37,32 @@ def Sphere "Ball"
 }
 """
 
+VARIANT_USDA = """#usda 1.0
+
+def Xform "Prop" (
+    variantSets = "lod"
+    variants = {
+        string lod = "high"
+    }
+)
+{
+    variantSet "lod" = {
+        "high" {
+            def Sphere "Geom"
+            {
+                double radius = 10
+            }
+        }
+        "low" {
+            def Sphere "Geom"
+            {
+                double radius = %s
+            }
+        }
+    }
+}
+"""
+
 SPARSE_USDA = """#usda 1.0
 
 def Sphere "Ball"
@@ -221,6 +247,21 @@ def test_tolerance_never_absorbs_a_flipped_boolean(tmp_path):
 
     changed = diff_stages(str(a), str(b), tolerance=2.0)["attributes_changed"]
     assert [(c["value_a"], c["value_b"]) for c in changed] == [(False, True)]
+
+
+def test_layer_scope_reaches_inside_a_variant(tmp_path):
+    """A variant's contents hang off the variant set, not off the prim namespace."""
+    a = tmp_path / "variant_a.usda"
+    b = tmp_path / "variant_b.usda"
+    a.write_text(VARIANT_USDA % "2")
+    b.write_text(VARIANT_USDA % "7")
+
+    changed = diff_stages(str(a), str(b), scope="layer")["attributes_changed"]
+    assert [(c["prim"], c["value_a"], c["value_b"]) for c in changed] == [
+        ("/Prop{lod=low}Geom", 2.0, 7.0)
+    ]
+    # `lod=high` is selected, so the composed stage never sees the edited variant.
+    assert diff_stages(str(a), str(b), scope="composed")["identical"] is True
 
 
 def test_a_negative_tolerance_is_refused(drifted):

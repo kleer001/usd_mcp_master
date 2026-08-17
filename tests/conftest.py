@@ -258,3 +258,56 @@ def drifted(tmp_path):
     a.write_text(DRIFT_A_USDA)
     b.write_text(DRIFT_B_USDA)
     return str(a), str(b)
+
+
+PROFILE_ASSET_USDA = """#usda 1.0
+
+def Xform "Prop"
+{
+    def Sphere "Geom"
+    {
+        double radius.timeSamples = {
+            1: 1,
+            2: 2,
+        }
+        asset texture.timeSamples = {
+            1: @./tex.exr@,
+            2: @./tex.exr@,
+        }
+    }
+}
+"""
+
+PROFILE_SHOT_USDA = """#usda 1.0
+
+def Xform "Set"
+{
+    def "PropA" (
+        instanceable = true
+        references = @./asset.usda@</Prop>
+    )
+    {
+    }
+
+    def "Deferred" (
+        payload = @./asset.usda@</Prop>
+    )
+    {
+    }
+}
+"""
+
+
+@pytest.fixture
+def profiled(tmp_path):
+    """A stage carrying every cost the profiler names.
+
+    `/Set/PropA` is instanceable, so its geometry is an instance proxy; `/Set/Deferred`
+    arrives through a payload. Both reach an asset whose `radius` is genuinely animated
+    and whose `texture` is authored once per frame at the same value — animation that
+    makes the stage time-dependent and changes nothing. No frame range is authored.
+    """
+    (tmp_path / "asset.usda").write_text(PROFILE_ASSET_USDA)
+    shot_path = tmp_path / "shot.usda"
+    shot_path.write_text(PROFILE_SHOT_USDA)
+    return str(shot_path)

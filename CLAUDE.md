@@ -1,6 +1,6 @@
 # usd_mcp — working notes
 
-A read-only MCP server that explains OpenUSD composition, and authors into them when asked: seven read-only
+A read-only MCP server that explains OpenUSD composition, and authors into them when asked: eight read-only
 tools, three opt-in mutating tools, two resources, two prompts. `README.md` is the user-facing description; `SPEC.md` is the contract —
 safety posture, tool surface, and the phased roadmap.
 
@@ -13,6 +13,7 @@ usd_mcp/
   compose.py   arc, variant, and edit-target explainers; likewise pure
   resolve.py   asset-path resolution; the only module that touches Ar
   diff.py      stage comparison with numeric tolerance; composed or per-layer
+  profile.py   layer, payload, instancing, and time cost, and the traps they imply
   write.py     the ONLY module that authors; everything else reads
   tools/       registration only, one module per domain, each with register(server, annotations)
   resources.py stage facts as URI templates
@@ -23,18 +24,21 @@ tests/
   test_explain.py  the value and visibility explainers, called directly
   test_compose.py  the arc, variant, and edit-target explainers, called directly
   test_diff.py     the stage diff, both scopes, called directly
+  test_profile.py  the stage profiler and every finding it emits
   test_server.py   the same behaviour through the MCP tool layer
   test_resources.py / test_prompts.py  the non-tool surfaces
   test_write.py    the write path, including that a dry run writes nothing
   test_safety_contract.py  parses usd_mcp/ and asserts the SPEC.md safety contract
 ```
 
-`conftest.py` builds three fixtures: `shot` (a shot layer sublayering an asset layer) for
+`conftest.py` builds four fixtures: `shot` (a shot layer sublayering an asset layer) for
 strength-ordering questions, `composed` (references, a payload, a variant set, and an
 instanced prim) for arc questions, and `drifted` (a pair of stages differing by both
-float noise and real edits) for the diff.
+float noise and real edits) for the diff, and `profiled` (instancing, a deferred
+payload, and animation that never changes) for the profiler.
 
-The split matters: `explain.py`, `compose.py`, and `diff.py` know nothing about MCP, so the logic is
+The split matters: `explain.py`, `compose.py`, `diff.py`, and `profile.py` know nothing
+about MCP, so the logic is
 testable without a transport and reusable outside one. Keep new USD logic there, put
 registration in `tools/`, and let `server.py` stay a list of `register` calls.
 
@@ -111,6 +115,12 @@ appears in the audit log exactly once.
 - `Stage.Traverse()` **skips instance proxies**. Use `Stage.Traverse(Usd.TraverseInstanceProxies())`
   to reach them. A sweep over real assets that omits this touches no proxy at all, and
   proxies are where several failure modes live.
+- `Usd.PrimDefaultPredicate` also demands `PrimIsLoaded`, so the prim *carrying* an
+  unloaded payload is skipped along with its absent contents. Drop that clause to count
+  payloads.
+- Walking `Sdf.PrimSpec.nameChildren` from a layer's root prims misses everything inside
+  a variant — variant contents hang off the variant set. `Sdf.Layer.Traverse` reaches
+  them, at paths like `/Prop{lod=low}Geom` (no slash before the child).
 - An instance proxy has no prim index of its own, so `MakeResolveTargetStrongerThan`
   against one raises `Tf.ErrorException` from inside USD rather than returning anything.
   It also cannot hold an authored opinion in any layer.

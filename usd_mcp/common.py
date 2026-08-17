@@ -63,6 +63,21 @@ def require_attribute(prim, attribute_name):
     return attr
 
 
+def prim_specs(layer):
+    """Every prim spec a layer authors, in no particular order, variants included.
+
+    Walking `nameChildren` down from the root prims misses everything inside a variant:
+    a variant's contents hang off the variant set rather than off the prim, and they are
+    as authored as the rest of the file. `Sdf.Layer.Traverse` reaches them.
+    """
+    paths = []
+    layer.Traverse(Sdf.Path.absoluteRootPath, paths.append)
+    for path in paths:
+        spec = layer.GetPrimAtPath(path)
+        if spec is not None and path != Sdf.Path.absoluteRootPath:
+            yield spec
+
+
 def root_layer_stack(stage):
     """The stage's layer stack, strongest first, without the session layer.
 

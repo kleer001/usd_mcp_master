@@ -16,7 +16,7 @@ Reads only. Nothing here opens a stage for editing or touches a layer's contents
 
 from pxr import Usd
 
-from usd_mcp.common import open_layer, open_stage, plain
+from usd_mcp.common import open_layer, open_stage, plain, prim_specs
 
 SCOPES = ("composed", "layer")
 
@@ -203,21 +203,15 @@ def _composed_attribute(attr):
 def _layer_prims(layer_path):
     """Every prim spec in one layer as authored, keyed by path."""
     layer = open_layer(layer_path)
-    prims = {}
-
-    def walk(spec):
-        prims[str(spec.path)] = {
+    return {
+        str(spec.path): {
             "type_name": spec.typeName,
             "attributes": {
                 attr.name: _layer_attribute(layer, attr) for attr in spec.attributes
             },
         }
-        for child in spec.nameChildren:
-            walk(child)
-
-    for root in layer.rootPrims:
-        walk(root)
-    return prims
+        for spec in prim_specs(layer)
+    }
 
 
 def _layer_attribute(layer, spec):

@@ -23,6 +23,7 @@ def test_tools_are_registered_read_only():
         "explain_edit_target",
         "resolve_path",
         "diff_stages",
+        "profile_stage",
     }
     assert all(tool.annotations.read_only_hint for tool in tools)
 
@@ -33,6 +34,13 @@ def test_diff_stages_round_trips_through_the_tool_layer(drifted):
 
     assert result["counts"]["within_tolerance"] == 2
     assert [c["attribute"] for c in result["attributes_changed"]] == ["primvars:displayColor"]
+
+
+def test_profile_stage_round_trips_through_the_tool_layer(profiled):
+    result = call("profile_stage", stage_path=profiled, load_payloads=False)
+
+    assert result["prims"]["unloaded_payloads"] == 1
+    assert any("never changes" in note for note in result["findings"])
 
 
 def test_explain_value_round_trips_through_the_tool_layer(shot):
