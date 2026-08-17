@@ -36,7 +36,7 @@ def set_attribute(stage_path, prim_path, attribute_name, value, target_layer, co
     Inventing a property the schema does not define is a different operation with
     different consequences, and is not this one.
     """
-    stage = open_stage(stage_path)
+    stage = open_stage(stage_path, cached=False)
     prim = require_prim(stage, prim_path)
     _require_authorable(prim)
     attr = require_attribute(prim, attribute_name)
@@ -62,7 +62,7 @@ def set_visibility(stage_path, prim_path, visible, target_layer, confirm=False):
     when an ancestor is invisible. The resolved value reported afterwards is the
     prim's computed visibility, not the token authored, precisely so that case shows.
     """
-    stage = open_stage(stage_path)
+    stage = open_stage(stage_path, cached=False)
     prim = require_prim(stage, prim_path)
     _require_authorable(prim)
     imageable = UsdGeom.Imageable(prim)
@@ -102,7 +102,7 @@ def set_active(stage_path, prim_path, active, target_layer, confirm=False):
     Deactivating a prim removes its entire subtree from composition — descendants are
     not merely hidden, they stop existing on the stage.
     """
-    stage = open_stage(stage_path)
+    stage = open_stage(stage_path, cached=False)
     prim = require_prim(stage, prim_path)
     _require_authorable(prim)
     layer = _writable_layer(stage, target_layer)

@@ -6,11 +6,47 @@ here so both explainer modules convert at the same boundary rather than each
 growing its own.
 """
 
+import os
+from collections import OrderedDict
+
 from pxr import Sdf, Tf, Usd
 
+# Composing a stage dominates a tool call that reads one prim: on a 200-layer, 10,000-prim
+# stage, opening costs ~66 ms and answering the question afterwards costs ~0.04 ms. A
+# single question does not care. A sweep of several thousand does — six thousand of them
+# is six minutes of composition and a fifth of a second of work.
+#
+# So a cache is worth having and is off unless asked for, on the same reasoning as the
+# write path: it changes what an answer can be wrong about. A cached stage is served only
+# when every layer it uses still has the mtime it had when it was composed, which costs
+# under a millisecond to check against the 66 ms it saves. It cannot see a file that did
+# not exist when the stage was composed and does now — a reference that was broken and is
+# no longer resolves to nothing on a cache hit — which is the reason this is opt-in rather
+# than the default. Holding a stage is also what keeps its layers in memory, and USD will
+# not re-read a layer it already holds, so a fingerprint miss drops every cached stage
+# rather than only the one that moved.
+_stage_cache = None
+_cache_limit = 0
 
-def open_stage(stage_path, load_payloads=True):
+
+def enable_stage_cache(limit=4):
+    """Serve repeated opens of an unchanged stage from memory. Off until called.
+
+    Bounded by stage count rather than by bytes: a production stage's footprint is not
+    knowable in advance, and four of them is already a deliberate amount of memory.
+    """
+    global _stage_cache, _cache_limit
+    _stage_cache = OrderedDict()
+    _cache_limit = limit
+
+
+
+def open_stage(stage_path, load_payloads=True, cached=True):
     """Open a stage, or raise `ValueError` naming what went wrong.
+
+    `cached=False` always composes afresh. The write path passes it: an authored stage
+    that fails to save holds an edit no fingerprint can see, and serving that to a reader
+    would report scene description that is not on disk.
 
     `load_payloads=False` composes the stage without pulling payload contents in,
     matching a session that deferred them. It changes the answer: an unloaded
@@ -23,6 +59,30 @@ def open_stage(stage_path, load_payloads=True):
     at this boundary is what makes the `ValueError` contract the rest of the package
     documents actually hold.
     """
+    if not cached or _stage_cache is None:
+        return _compose(stage_path, load_payloads)
+
+    key = (os.path.realpath(stage_path), load_payloads)
+    entry = _stage_cache.get(key)
+    if entry is not None:
+        if entry[1] == _fingerprint(entry[0]):
+            _stage_cache.move_to_end(key)
+            return entry[0]
+        # USD will not re-read a layer that is still in memory, and a cached stage is
+        # what keeps it there. Dropping every cached stage — not just this one, since
+        # stages share layers — is what lets the recomposed stage read the new file.
+        del entry
+        _stage_cache.clear()
+
+    stage = _compose(stage_path, load_payloads)
+    _stage_cache[key] = (stage, _fingerprint(stage))
+    _stage_cache.move_to_end(key)
+    while len(_stage_cache) > _cache_limit:
+        _stage_cache.popitem(last=False)
+    return stage
+
+
+def _compose(stage_path, load_payloads):
     load = Usd.Stage.LoadAll if load_payloads else Usd.Stage.LoadNone
     try:
         stage = Usd.Stage.Open(stage_path, load=load)
@@ -31,6 +91,24 @@ def open_stage(stage_path, load_payloads=True):
     if not stage:
         raise ValueError(f"could not open as a USD stage: {stage_path}")
     return stage
+
+
+def _fingerprint(stage):
+    """The on-disk state of every file this stage composed from.
+
+    A missing file is a changed one: it fingerprints as `None` and no longer matches what
+    was recorded when the stage was composed. Anonymous layers have no file to check.
+    """
+    marks = []
+    for layer in stage.GetUsedLayers():
+        path = layer.realPath
+        if not path:
+            continue
+        try:
+            marks.append((path, os.stat(path).st_mtime_ns))
+        except OSError:
+            marks.append((path, None))
+    return tuple(sorted(marks))
 
 
 def open_layer(layer_path):

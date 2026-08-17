@@ -16,7 +16,7 @@ import sys
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from usd_mcp import prompts, resources
+from usd_mcp import common, prompts, resources
 from usd_mcp.tools import compose as compose_tools
 from usd_mcp.tools import diff as diff_tools
 from usd_mcp.tools import explain as explain_tools
@@ -91,7 +91,20 @@ def main():
             "Off by default: without it the server has no write path at all."
         ),
     )
+    parser.add_argument(
+        "--cache-stages",
+        action="store_true",
+        help=(
+            "serve repeated opens of an unchanged stage from memory. Off by default: a "
+            "cached stage cannot see a file that did not exist when it was composed, so "
+            "a reference that was broken and is no longer stays broken until the cache "
+            "misses. Worth it for a sweep of thousands of calls, not for a handful."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.cache_stages:
+        common.enable_stage_cache()
 
     (build_server(enable_write=True) if args.enable_write else server).run()
 

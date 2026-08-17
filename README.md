@@ -324,6 +324,13 @@ and fails the build on a network import, a process launch, a USD authoring call 
 annotated `readOnlyHint`, or a mutating tool that dropped its `confirm` gate or stopped
 demanding an explicit target layer.
 
+Opening a stage is nearly the whole cost of a call that reads one prim — about 66 ms
+against 0.04 ms of work on a 200-layer, 10,000-prim stage — so `--cache-stages` will
+serve repeated opens of an unchanged stage from memory. It is off by default and
+validates a hit against the mtime of every layer the stage composed from. The reasoning,
+including what such a cache still cannot see, is in
+[SPEC.md](SPEC.md#stage-cache).
+
 Authoring is the destination, staged behind the explainer rather than ruled out — a
 write path that cannot say where an edit lands reproduces the exact failure this server
 diagnoses. The three phases and the contract a write path inherits are in

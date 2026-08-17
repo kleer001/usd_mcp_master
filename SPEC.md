@@ -392,6 +392,35 @@ one boundary rather than each growing its own. Registration lives in
 `register` calls. Composition logic that a test can call directly, without a server, is
 logic a test actually covers.
 
+## Stage cache
+
+Off by default; `--cache-stages` turns it on.
+
+Composing a stage is nearly the whole cost of a tool call that reads one prim. On a
+200-layer, 10,000-prim stage, opening costs about 66 ms and answering the question
+afterwards about 0.04 ms — so a sweep of six thousand calls spends six minutes composing
+and a fifth of a second working. One question does not care; a sweep does.
+
+A cached stage is served only when every layer it composed from still has the mtime it
+had at composition. Checking that costs under a millisecond against the 66 ms it saves,
+so the cache is validated in full rather than trusted. It is bounded by stage count
+rather than by bytes, because a production stage's footprint is not knowable in advance.
+
+Two properties keep it opt-in rather than default:
+
+- USD will not re-read a layer it still holds, and a cached stage is what holds it. A
+  fingerprint miss therefore drops **every** cached stage, not only the one that moved,
+  because stages share layers and a surviving stage would pin the old scene description.
+  A stage recomposed from layers nobody released reports the file's old contents with no
+  error, which is the failure mode this whole server exists to make impossible.
+- A file that did not exist when the stage was composed and does now is invisible to the
+  fingerprint. A reference that was broken and is no longer stays broken until the cache
+  misses for some other reason.
+
+The write path never takes a cached stage. An authored stage whose save fails holds an
+edit no fingerprint can see, and serving that to a reader would report scene description
+that is not on disk.
+
 ## Roadmap
 
 Authoring is the destination, not a rejected option. It is staged behind the explainer

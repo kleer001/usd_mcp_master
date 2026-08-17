@@ -27,6 +27,7 @@ tests/
   test_diff.py     the stage diff, both scopes, called directly
   test_profile.py  the stage profiler and every finding it emits
   test_portability.py  the shading portability check, one verdict per material
+  test_cache.py    the opt-in stage cache, and every way it must invalidate
   test_server.py   the same behaviour through the MCP tool layer
   test_resources.py / test_prompts.py  the non-tool surfaces
   test_write.py    the write path, including that a dry run writes nothing
@@ -71,6 +72,11 @@ pushing:
   authoring calls in that one file and fails the build anywhere else, so a convenience
   `.Set()` slipped into an explainer does not compile past CI. New USD mutation goes
   there or it does not go in.
+- **The stage cache is opt-in and validated, not trusted.** `--cache-stages` serves a
+  repeated open from memory only when every layer the stage composed from still has
+  the mtime it had; a miss drops the whole cache, because USD will not re-read a layer
+  another cached stage is still holding. The write path passes `cached=False` — an
+  authored stage whose save fails holds an edit no fingerprint can see.
 - **Writes are opt-in and the default server has none.** `build_server()` registers no
   mutating tool; `--enable-write` adds exactly three. The write path is absent from the
   tool list rather than disabled inside it, and a test pins that set.
@@ -137,8 +143,12 @@ appears in the audit log exactly once.
   output also exists as soon as anything asks USD for one; only a connected source is
   a provision.
 - `str()` of an `Sdf.AssetPath` is USD source syntax (`@path@`) and drops `resolvedPath`.
-- Opening a stage revalidates layers against their file timestamps, so an external edit
-  is picked up; the layer cache does not serve stale scene description.
+- USD **will not re-read a layer that is still in memory**. `Stage.Open` picks up an
+  external edit only once every reference to the old layer has been dropped and the
+  layer has left USD's registry — so holding a stage alive pins the scene description
+  it composed from, whatever the file on disk now says. Tool calls that retain nothing
+  between them are fresh for this reason, and `common.enable_stage_cache` has to drop
+  every cached stage on a miss to stay that way.
 
 ## MCP SDK
 
