@@ -16,6 +16,12 @@ three mutating commands are not registered, so `usd-explain set-attribute` is an
 unrecognised command rather than a refused one. The dry run stays the default —
 `--confirm` is what writes.
 
+Results are whole by default, which is where this differs from the server. The result
+bounds exist because an MCP tool result is spent against a context window; stdout is
+spent against a pipe, where a fifteen-megabyte mesh attribute costs nothing and trimming
+it breaks the script reading it. `--brief` opts back in for a caller that wants what an
+agent would see.
+
 This module parses arguments and prints results. It holds no USD logic.
 """
 
@@ -23,6 +29,7 @@ import argparse
 import json
 import sys
 
+from usd_mcp import common
 from usd_mcp.compose import explain_edit_target, explain_prim, explain_variants
 from usd_mcp.diff import SCOPES, diff_stages
 from usd_mcp.explain import explain_value, why_not_visible
@@ -262,6 +269,15 @@ def build_parser(enable_write=False):
             "Off by default: without it this tool has no write path at all."
         ),
     )
+    parser.add_argument(
+        "--brief",
+        action="store_true",
+        help=(
+            "trim long lists and large array values the way the MCP server does, for a "
+            "caller spending the output on a context window rather than a pipe. Off by "
+            "default: a shell wants the whole answer, and a trimmed one breaks a script."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     _add_read_commands(subparsers)
     if enable_write:
@@ -281,6 +297,8 @@ def main(argv=None):
     gate, _ = _GATE.parse_known_args(argv)
 
     args = build_parser(enable_write=gate.enable_write).parse_args(argv)
+    if not args.brief:
+        common.unbound_results()
     try:
         result = args.run(args)
     except ValueError as error:

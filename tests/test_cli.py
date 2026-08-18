@@ -11,7 +11,9 @@ import json
 
 import pytest
 
+from usd_mcp import common
 from usd_mcp.cli import build_parser, main
+from usd_mcp.explain import explain_value
 
 
 def run(capsys, *argv):
@@ -221,3 +223,34 @@ def test_every_command_carries_help_text():
     """The help is the whole interface for a person who has not read SPEC.md."""
     parser = build_parser(enable_write=True)
     assert "OpenUSD" in parser.description
+
+
+class TestResultBounds:
+    """The shell gets the whole answer; the context window gets a bounded one.
+
+    A bound exists because an MCP tool result is spent against a context window. Stdout
+    is spent against a pipe, where a fifteen-megabyte mesh attribute costs nothing and a
+    trimmed one breaks the script reading it. So the CLI drops the bounds and the server
+    keeps them, and that difference is the whole point of having two front doors.
+    """
+
+    def test_the_shell_gets_the_array_whole(self, capsys, bulky):
+        result = run(capsys, "value", bulky[0], "/Mesh", "points")
+        assert isinstance(result["resolved_value"], list)
+        assert len(result["resolved_value"]) == 200
+
+    def test_the_shell_gets_every_variant(self, capsys, bulky):
+        result = run(capsys, "variants", bulky[0], "/Switch")
+        assert len(result["variant_sets"][0]["variants"]) == 60
+        assert not any(k.endswith("_truncated") for k in result["variant_sets"][0])
+
+    def test_brief_opts_back_into_what_an_agent_would_see(self, capsys, bulky, monkeypatch):
+        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
+        result = run(capsys, "--brief", "value", bulky[0], "/Mesh", "points")
+        assert result["resolved_value"]["elements_truncated"]["total"] == 200
+
+    def test_the_server_keeps_its_bounds(self, bulky, monkeypatch):
+        """The same call through the library path stays bounded — the CLI opts out, not the core."""
+        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
+        result = explain_value(bulky[0], "/Mesh", "points")
+        assert "elements_truncated" in result["resolved_value"]

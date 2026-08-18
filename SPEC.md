@@ -415,6 +415,7 @@ The binary name supplies the verb, so the commands drop it:
 | `usd-explain diff STAGE_A STAGE_B [--tolerance F] [--scope S]` | `diff_stages` |
 | `usd-explain profile STAGE [--no-payloads]` | `profile_stage` |
 | `usd-explain portability STAGE TARGET` | `check_portability` |
+| `usd-explain --brief <any command>` | apply the server's size bounds |
 | `usd-explain --enable-write set-attribute STAGE PRIM ATTR VALUE LAYER [--confirm]` | `set_attribute` |
 | `usd-explain --enable-write set-visibility STAGE PRIM visible\|invisible LAYER [--confirm]` | `set_visibility` |
 | `usd-explain --enable-write set-active STAGE PRIM active\|inactive LAYER [--confirm]` | `set_active` |
@@ -423,37 +424,53 @@ The binary name supplies the verb, so the commands drop it:
 `'"red"'` is a string, `[[0, 1, 0]]` is an array of colours. A CLI that inferred the
 difference would author the wrong type and report success.
 
+Results are whole by default: `--brief` applies the size bounds the MCP server uses, for
+a caller spending the output on a context window rather than a pipe.
+
 There is no `--cache-stages`. The cache pays for itself across thousands of calls in one
 process; a CLI invocation opens one stage and exits.
 
 ## Result bounds
 
-The result lists that grow with the size of a stage are trimmed to a **25 KB budget per
-field** — roughly six thousand tokens. A result that does not fit in the caller's context
-window is not a smaller answer, it is no answer: measured on a 200-layer, 10,000-prim
-stage before the bound existed, `diff_stages` returned 1.59 MB and `profile_stage` 78 KB.
+**The bound is a property of the caller, not of the data.** A result that does not fit in
+the caller's context window is not a smaller answer, it is no answer — but stdout is not a
+context window. `usd-explain` calls `common.unbound_results()` at startup and returns
+everything; the MCP server does not, and bounds what it returns. A caller that wants both
+gets `--brief` on the CLI. Truncating a shell's output would break the script reading it
+for no gain, and 15 MB costs a pipe nothing.
+
+On the server, result lists get a **256 KB budget per field** and array values **25 KB**.
 
 The budget is in bytes rather than entries because entries are not the same size.
-Measured entries: a layer-stack identifier came to roughly 135 bytes and a profiled layer
-250 on a 200-layer synthetic stage, an authored opinion 300, and a material report 913 on
+Both are budgets in bytes rather than counts of entries, because entries are not the same
+size. Measured: a layer-stack identifier came to roughly 135 bytes and a profiled layer 250
+on a 200-layer synthetic stage, an authored opinion 300, and a material report 913 on
 `DrawModes.usd` from `usd-wg/assets`. Exact figures move with path length and scene
 content, but the spread does not — the dearest entry costs about seven times the cheapest.
-A single entry count lands those at costs differing sevenfold, so it is either too tight
-for the cheap fields or too loose for the dear ones. A byte budget lands every field at
-the same price and needs no per-field table to keep it there. How many entries that buys
-is reported rather than assumed.
+A single entry count lands those at prices differing sevenfold, so it is either too tight
+for the cheap fields or too loose for the dear ones. A budget lands every field at the same
+price and needs no per-field table to keep it there. How many entries that buys is reported
+rather than assumed.
 
-**It is set to clear real work by a wide margin.** Swept across stages from the
-`usd-wg/assets` collection and NVIDIA's Isaac Sim asset library, the distributions sit far
-below it: the 99th percentile was 2 authored opinions, 5 layers in a layer stack, 10
-composition arcs, and 24 materials, and the largest list of any kind was 70 entries.
+**The two numbers are far apart because the two things they bound are.** Both were set by
+sweeping the `usd-wg/assets` collection and NVIDIA's Isaac Sim asset library with the
+bounds switched off, which measures what actually happens rather than what might.
 
-Run over 464 of those stages, `profile_stage` truncated none and `check_portability`
-truncated two — the material-heaviest assets in the collection. On `DrawModes.usd`, 27 of
-its 70 materials fit the budget, because a material report is the dearest entry the tools
-produce. So the budget is not unreachable, and it is not meant to be: it is the point
-where an answer stops being worth its cost. It clears ordinary composition questions
-entirely, and bites only where a result was going to be large whatever the limit.
+Result lists are never large. Unbounded, `profile_stage` peaked at 9 KB across every stage
+in both collections and `check_portability` at 65 KB; the 99th percentile was 2 authored
+opinions, 5 layers in a layer stack, 10 composition arcs, and 24 materials, and the largest
+list of any kind held 70 entries. At 256 KB neither tool truncates on any of the 464 stages
+that open. The budget is a backstop for the stage nobody has profiled yet, set four times
+above anything measured; only a diff of two broadly different stages can reach it.
+
+Array values are the hazard the bound exists for. A single `points` attribute on
+`UsdCookie`, an ordinary asset in that collection, serialises to 15.1 MB — about four
+million tokens from one tool call, four times a million-token window. The largest array
+found held 713,718 elements, some 22 MB on its own. Values therefore get the tighter
+budget, and get it for a second reason: in a composition answer the array is the subject
+of the question, not the answer to it. Enough of it to see what it is, not all of it. At
+25 KB an ordinary mesh attribute passes whole — the 90th-percentile array in that sweep
+was 750 elements, about 17 KB — and only the outliers are sampled.
 
 The trim is never silent. A list that was trimmed is accompanied by a sibling field
 naming what was left out:
@@ -482,23 +499,17 @@ the trim would be the confident wrong answer this server exists to avoid.
 
 **Values as well as lists.** An array is the one value type with no upper size — a
 mesh's `points` is a single attribute and megabytes of JSON — so every field carrying an
-authored value is bounded too, at **50 elements**: `resolved_value`, an opinion's `value`,
+authored value is bounded too: `resolved_value`, an opinion's `value`,
 `current_resolved_value`, `value_that_would_survive`, `outranked_by.value`, `diff_stages`'
 `value_a` and `value_b`, and the write path's `change.from`, `change.to`, and
 `resolved_value_after`.
-
-Arrays are bounded by count rather than by budget because the bound means something
-different there. In that same sweep, 22% of authored arrays held more than fifty
-elements, the 99th percentile was 61,056, and the largest was 713,718 — one
-`faceVertexIndices`. Fifty elements is a sample that shows the shape of the value; nobody
-reads the five-hundredth vertex, and bulk geometry is what `usdcat` is for.
 
 A trimmed array becomes a dict rather than a shorter list, because a shorter list reads
 as the whole value and nothing in it says otherwise:
 
 ```json
-"resolved_value": { "elements": [ ... 50 ... ],
-                    "elements_truncated": { "reported": 50, "total": 50000 } }
+"resolved_value": { "elements": [ ... 380 ... ],
+                    "elements_truncated": { "reported": 380, "total": 118955 } }
 ```
 
 Explanations get the same treatment through `value_brief`, which names a long array

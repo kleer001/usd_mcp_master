@@ -17,7 +17,7 @@ import json
 import pytest
 
 from usd_mcp import common
-from usd_mcp.common import MAX_VALUE_ITEMS, bounded, bounded_value, value_brief
+from usd_mcp.common import bounded, bounded_value, value_brief
 from usd_mcp.compose import explain_prim, explain_variants
 from usd_mcp.diff import diff_stages
 from usd_mcp.explain import explain_value
@@ -29,6 +29,13 @@ from usd_mcp.write import set_attribute
 # anything real assets produce, so a fixture large enough to trip it would be a fixture
 # testing its own size rather than the code.
 LOWERED_BUDGET = 200
+
+
+@pytest.fixture
+def tight_values(monkeypatch):
+    """Shrink the value budget so a modest array exercises the trim."""
+    monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
+    return 100
 
 
 @pytest.fixture
@@ -209,23 +216,27 @@ class TestBoundedValue:
         assert bounded_value(None) is None
         assert bounded_value("inherited") == "inherited"
 
-    def test_an_array_at_the_bound_stays_a_list(self):
-        items = list(range(MAX_VALUE_ITEMS))
+    def test_an_ordinary_mesh_attribute_passes_through_whole(self):
+        """The 90th-percentile array in the sweep was 750 elements, about 19 KB."""
+        items = [[float(i), float(i), float(i)] for i in range(750)]
         assert bounded_value(items) == items
 
     def test_a_long_array_becomes_a_dict_that_says_it_was_trimmed(self):
         """A dict, not a shorter list: a shorter list reads as the whole value."""
-        result = bounded_value(list(range(200)))
-        assert result["elements"] == list(range(MAX_VALUE_ITEMS))
-        assert result["elements_truncated"] == {"reported": MAX_VALUE_ITEMS, "total": 200}
+        result = bounded_value(list(range(200)), budget=50)
+        reported = result["elements_truncated"]["reported"]
+        assert 0 < reported < 200
+        assert result["elements"] == list(range(reported))
+        assert result["elements_truncated"]["total"] == 200
 
-    def test_the_reported_value_is_bounded(self, bulky):
-        """No lowered limit needed: 22% of real arrays already exceed this one."""
+    def test_a_huge_value_is_bounded(self, monkeypatch, bulky):
+        """One `points` attribute in usd-wg/assets is 15.1 MB — this is that shape."""
+        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
         result = explain_value(bulky[0], "/Mesh", "points")
         assert result["resolved_value"]["elements_truncated"]["total"] == 200
-        assert len(result["resolved_value"]["elements"]) == MAX_VALUE_ITEMS
+        assert 0 < len(result["resolved_value"]["elements"]) < 200
 
-    def test_the_losing_opinions_value_is_bounded_too(self, bulky, lowered_limit):
+    def test_the_losing_opinions_value_is_bounded_too(self, tight_values, bulky):
         opinion = explain_value(bulky[0], "/Mesh", "points")["authored_opinions"][0]
         assert opinion["value"]["elements_truncated"]["total"] == 200
 
@@ -246,7 +257,7 @@ class TestComparisonStaysExact:
         assert result["identical"] is False
         assert result["counts"]["attributes_changed"] == 1
 
-    def test_but_the_reported_values_are_bounded(self, bulky, lowered_limit):
+    def test_but_the_reported_values_are_bounded(self, tight_values, bulky):
         change = diff_stages(*bulky)["attributes_changed"][0]
         assert change["value_a"]["elements_truncated"]["total"] == 200
         assert change["value_b"]["elements_truncated"]["total"] == 200
@@ -269,7 +280,7 @@ class TestVariantBounds:
 
 
 class TestWriteBounds:
-    def test_the_reported_diff_is_bounded(self, bulky, lowered_limit):
+    def test_the_reported_diff_is_bounded(self, tight_values, bulky):
         result = set_attribute(
             bulky[0], "/Mesh", "points", [(0, 0, 0)] * 200, bulky[0], confirm=False
         )
@@ -298,10 +309,10 @@ class TestValueBrief:
     def test_a_scalar_reads_as_itself(self):
         assert value_brief(5.0) == "5.0"
 
-    def test_a_long_array_is_named_by_its_length(self):
+    def test_a_long_array_is_named_by_its_length(self, tight_values):
         assert value_brief(list(range(200))) == "an array of 200 values"
 
-    def test_it_reads_an_already_bounded_value(self):
+    def test_it_reads_an_already_bounded_value(self, tight_values):
         """Explanations are built from the same dict the result reports."""
         assert value_brief(bounded_value(list(range(200)))) == "an array of 200 values"
 

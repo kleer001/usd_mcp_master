@@ -186,32 +186,70 @@ def plain(value):
     return str(value)
 
 
-# A result that does not fit in the caller's context window is not a smaller answer, it
-# is no answer: an agent that receives four hundred thousand tokens of changed
-# attributes loses the conversation the question was asked in.
+# A result that does not fit in the caller's context window is not a smaller answer, it is
+# no answer. Both budgets below were set from a sweep of production USD — the
+# `usd-wg/assets` collection and NVIDIA's Isaac Sim asset library — measured with the
+# bounds switched off, so they cap what actually happens rather than what might.
 #
-# Lists are bounded by size rather than by entry count, because entries are not the same
-# size. A layer identifier costs about 135 bytes; a profiled layer about 248; an authored
-# opinion about 304. One entry count lands those at wildly different costs, so it is
-# either too tight for the cheap fields or too loose for the dear ones. A byte budget
-# lands every field at the same price and needs no per-field table to keep it there.
+# The two answers were nothing alike.
 #
-# Twenty-five kilobytes is roughly six thousand tokens — a readable fraction of a context
-# window rather than the whole of one.
+#   result lists   never large. Unbounded, `profile_stage` peaked at 9 KB across every
+#                  stage in both collections and `check_portability` at 65 KB. No list
+#                  needs trimming; the budget is a backstop for the stage nobody has
+#                  profiled yet, set four times above anything measured. Only a diff of
+#                  two broadly different stages can reach it.
+#   array values   genuinely enormous. One `points` attribute on `UsdCookie` — an
+#                  ordinary sample asset — serialises to 15.1 MB, about four million
+#                  tokens, from a single tool call. The largest array found held 713,718
+#                  elements, some 22 MB on its own.
 #
-# Swept across 466 stages from the `usd-wg/assets` collection and NVIDIA's Isaac Sim
-# asset library, no result list of any kind reached this budget, or came close: the 99th
-# percentile was 2 authored opinions, 5 layers in a layer stack, 10 composition arcs, and
-# 24 materials, and the largest list found was 70 entries. The budget is a guard against
-# the stage nobody has profiled yet, not a tax on ordinary work.
+# Both are byte budgets, because entry costs differ by nearly sevenfold: a layer-stack
+# identifier runs about 135 bytes and a material report about 913. One entry count lands
+# those at wildly different prices; a budget lands them at the same one, and needs no
+# per-field table to keep it there.
 #
-# Array values are the exception, and are bounded by count. 22% of the authored arrays in
-# that sweep held more than fifty elements, the 99th percentile was 61,056, and the
-# largest was 713,718 — a single `faceVertexIndices`, megabytes of JSON on its own. Fifty
-# elements is a sample that shows the shape of the value; nobody reads the five-hundredth
-# vertex, and bulk geometry is what `usdcat` is for.
-MAX_FIELD_BYTES = 25_000
-MAX_VALUE_ITEMS = 50
+# Values get the tighter budget because in a composition answer the array is the subject,
+# not the answer: enough of it to see what it is, not all of it. At 25 KB an ordinary mesh
+# attribute passes whole — the 90th-percentile array in that sweep was 750 elements, about
+# 17 KB — and only the outliers are sampled. Bulk geometry is what `usdcat` is for.
+#
+# None of which applies to a shell. A budget exists because a tool result is spent against
+# a context window; a result piped to `jq` or redirected to a file is spent against a disk,
+# and 15 MB there costs nothing and truncating it breaks the script. So the budgets are a
+# property of the caller, not of the data: the MCP server keeps them and `usd-explain`
+# drops them, each saying so in its own `--help`.
+MAX_FIELD_BYTES = 256_000
+MAX_VALUE_BYTES = 25_000
+
+
+def unbound_results():
+    """Report every list and value whole, however large. Bounded until called.
+
+    For a caller whose output goes to a pipe or a file rather than into a context window.
+    `usd-explain` calls this at startup; the MCP server does not, because a tool result
+    that overruns the window it lands in is not a smaller answer, it is no answer.
+    """
+    global MAX_FIELD_BYTES, MAX_VALUE_BYTES
+    MAX_FIELD_BYTES = MAX_VALUE_BYTES = None
+
+
+def _fit(items, budget):
+    """How many leading entries fit the budget, or all of them when there is none.
+
+    Costs one `json.dumps` per entry reported, not per entry held: the walk stops at the
+    budget, so a hundred-thousand-entry array is priced a few hundred entries deep and no
+    further. A field that answered with nothing would say less than one that answered with
+    too much, hence the floor of one.
+    """
+    if budget is None:
+        return len(items)
+    kept = spent = 0
+    for item in items:
+        spent += len(json.dumps(item, default=str)) + 1
+        if spent > budget and kept:
+            break
+        kept += 1
+    return kept
 
 
 def bounded(field, items, budget=None):
@@ -223,20 +261,8 @@ def bounded(field, items, budget=None):
     the signal. Splat the result into the dict being built:
 
         return {"stage": stage_path, **bounded("layers", layers)}
-
-    Measuring costs one `json.dumps` per entry reported, not per entry held: the walk
-    stops at the budget, so a ten-thousand-entry list is priced a few hundred entries
-    deep and no further. One entry is always reported, however large it is — a field
-    that answered with nothing would say less than a field that answered with too much.
     """
-    budget = MAX_FIELD_BYTES if budget is None else budget
-    kept = spent = 0
-    for item in items:
-        spent += len(json.dumps(item, default=str)) + 1
-        if spent > budget and kept:
-            break
-        kept += 1
-
+    kept = _fit(items, MAX_FIELD_BYTES if budget is None else budget)
     if kept >= len(items):
         return {field: items}
     return {
@@ -245,25 +271,27 @@ def bounded(field, items, budget=None):
     }
 
 
-def bounded_value(value):
-    """An authored value, trimmed when it is a long array, saying so when it is.
+def bounded_value(value, budget=None):
+    """An authored value, trimmed when it is a large array, saying so when it is.
 
-    An array is the one value type with no upper size: a mesh's `points` is a single
-    attribute and megabytes of JSON, which overruns a caller for the same reason an
-    unbounded result list does. A trimmed array becomes a dict rather than a shorter
-    list, because a shorter list reads as the whole value and nothing in it says
-    otherwise.
+    An array is the one value type with no upper size, and the ceiling is not theoretical:
+    a single `points` attribute in the USD working group's own sample collection is 15.1 MB
+    of JSON. A trimmed array becomes a dict rather than a shorter list, because a shorter
+    list reads as the whole value and nothing in it says otherwise.
 
     `plain()` itself stays exact. `diff_stages` compares its output element by element,
     and a comparison against a truncated array would report two different meshes as
     identical — a confident wrong answer, which costs more than a large one.
     """
-    if isinstance(value, list) and len(value) > MAX_VALUE_ITEMS:
-        return {
-            "elements": value[:MAX_VALUE_ITEMS],
-            "elements_truncated": {"reported": MAX_VALUE_ITEMS, "total": len(value)},
-        }
-    return value
+    if not isinstance(value, list):
+        return value
+    kept = _fit(value, MAX_VALUE_BYTES if budget is None else budget)
+    if kept >= len(value):
+        return value
+    return {
+        "elements": value[:kept],
+        "elements_truncated": {"reported": kept, "total": len(value)},
+    }
 
 
 def value_brief(value):
@@ -278,6 +306,6 @@ def value_brief(value):
     """
     if isinstance(value, dict) and "elements_truncated" in value:
         return f"an array of {value['elements_truncated']['total']} values"
-    if isinstance(value, list) and len(value) > MAX_VALUE_ITEMS:
+    if isinstance(value, list) and _fit(value, MAX_VALUE_BYTES) < len(value):
         return f"an array of {len(value)} values"
     return repr(value)

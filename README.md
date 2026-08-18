@@ -74,10 +74,11 @@ $ usd-explain edit-target shot.usda /World/Ball radius asset.usda
 $ usd-explain diff before.usda after.usda --tolerance 1e-6
 ```
 
-`usd-explain --help` lists all nine. Writing is opt-in here too: without
-`--enable-write` there is no `set-attribute` command to call, and with it the dry run is
-still the default until you pass `--confirm`. The full command table is in
-[SPEC.md](SPEC.md#command-line).
+`usd-explain --help` lists all nine. Results come back whole — the server's size bounds
+are for a context window, not a pipe — and `--brief` opts into them. Writing is opt-in
+here too: without `--enable-write` there is no `set-attribute` command to call, and with
+it the dry run is still the default until you pass `--confirm`. The full command table is
+in [SPEC.md](SPEC.md#command-line).
 
 ## Tools
 
@@ -311,35 +312,42 @@ context nobody verified.
 
 ## Result bounds
 
-The result lists that grow with the size of a stage — changed attributes, prims added,
-removed and retyped, layers, layer stacks, opinions, composition arcs, materials, and
-shaders — are trimmed to a 25 KB budget per field, and say so when they are:
+**`usd-explain` returns everything. The MCP server bounds what it returns.** A bound
+exists because a tool result is spent against a context window; stdout is spent against a
+pipe, where a large answer costs nothing and a trimmed one breaks the script reading it.
+Pass `--brief` to the CLI to see what an agent would see.
+
+On the server, result lists get a 256 KB budget per field and array values 25 KB, and
+say so when either bites:
 
 ```json
 "attributes_changed": [ ... 161 entries ... ],
 "attributes_changed_truncated": { "reported": 161, "total": 10000 }
 ```
 
-Without that, a diff of two 10,000-prim stages returns about 1.6 MB — on the order of
-400,000 tokens — and takes the agent asking the question down with it. Counts,
+Both numbers came from measuring production USD with the bounds switched off — the
+`usd-wg/assets` collection and NVIDIA's Isaac Sim library — and the two answers were
+nothing alike.
+
+Result lists are never large. Unbounded, `profile_stage` peaked at 9 KB across every
+stage in both collections and `check_portability` at 65 KB, and at 256 KB neither
+truncates on any of the 464 stages. That budget is a backstop for the stage nobody has
+profiled yet; only a diff of two broadly different stages can reach it.
+
+Array values are the real hazard. One `points` attribute on `UsdCookie` — an ordinary
+sample asset — serialises to **15.1 MB, about four million tokens**, from a single call.
+So values get the tighter budget: an ordinary mesh attribute passes whole, and only the
+outliers are sampled. For the bulk geometry itself, use `usdcat` or the CLI. Counts,
 summaries, and findings are computed over everything regardless, and lists with a
 meaningful order are sorted before they are trimmed, so what survives is the strongest
 opinion, the costliest layer, the material least likely to render.
 
-The budget is set high enough that ordinary work rarely meets it. Across 464 stages
-from `usd-wg/assets` and NVIDIA's Isaac Sim library, `profile_stage` truncated nothing at
-all and `check_portability` truncated two — the material-heaviest stages in the
-collection, at 70 materials. Everything else came back whole.
-
-An attribute's own value is bounded too, at 50 elements — a mesh's `points` is a single
-attribute and megabytes of JSON, and 22% of the arrays in that sweep ran past fifty, the
-largest to 713,718. Fifty is a sample that shows the shape of the value; for the bulk
-geometry itself, use `usdcat`. A trimmed array comes back as a dict rather than a shorter
-list, so it cannot be mistaken for the whole value:
+A trimmed array comes back as a dict rather than a shorter list, so it cannot be mistaken
+for the whole value:
 
 ```json
-"resolved_value": { "elements": [ ... 50 ... ],
-                    "elements_truncated": { "reported": 50, "total": 50000 } }
+"resolved_value": { "elements": [ ... 380 ... ],
+                    "elements_truncated": { "reported": 380, "total": 118955 } }
 ```
 
 Two things stay exact on purpose. `diff_stages` **compares** whole arrays and only

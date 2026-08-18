@@ -88,9 +88,14 @@ pushing:
   rather than disabled inside them, and `test_safety_contract.py` pins both sets and
   asserts they are the same three.
 - **Result lists are bounded, and no trim is silent.** `common.bounded()` trims to
-  `MAX_FIELD_BYTES` — a byte budget, not an entry count, because entries differ in size
-  by more than twice — and attaches `<field>_truncated` with the reported and total
-  counts.
+  `MAX_FIELD_BYTES`, and `bounded_value()` to `MAX_VALUE_BYTES` — byte budgets, not entry
+  counts, because entry costs differ nearly sevenfold — attaching `<field>_truncated` with
+  the reported and total counts.
+- **The bound belongs to the caller, not the data.** `usd-explain` calls
+  `common.unbound_results()` and returns everything; the MCP server keeps its budgets. A
+  tool result is spent against a context window, stdout against a pipe. Measured on real
+  assets: result lists never exceed 65 KB unbounded, while one `points` attribute in
+  `usd-wg/assets` is 15.1 MB — which is why the two budgets are an order apart.
   Aggregates — `counts`, `summary`, `findings` — read everything the tool examined, not
   the slice it reported. Order a list before bounding it so the cut drops the least
   important end. A new list-returning field goes through `bounded`, and a new field
