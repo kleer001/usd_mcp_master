@@ -91,9 +91,14 @@ pushing:
   `MAX_ITEMS` and attaches `<field>_truncated` with the reported and total counts.
   Aggregates — `counts`, `summary`, `findings` — read everything the tool examined, not
   the slice it reported. Order a list before bounding it so the cut drops the least
-  important end. A new list-returning field goes through `bounded` or it can take an
-  agent's context window down. Two paths are still unbounded and `SPEC.md#result-bounds`
-  says so out loud: an attribute's own value, and `explain_variants`.
+  important end. A new list-returning field goes through `bounded`, and a new field
+  carrying an authored value goes through `bounded_value`, or it can take an agent's
+  context window down — an array is the one value type with no upper size.
+- **Bound what you report, never what you compare.** `plain()` stays exact. `diff_stages`
+  compares its output element by element, so trimming before the comparison would call
+  two different meshes identical. The write path's audit log is exact for the same
+  reason: a record of the first fifty elements is not a record. Use `value_brief` for a
+  value going into an explanation string.
 - **The dry run is the default, not a separate tool.** Every mutating function takes
   `confirm=False` and returns the diff without writing. Do not add a mutating path that
   writes on its first call.

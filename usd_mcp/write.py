@@ -22,7 +22,15 @@ from pathlib import Path
 
 from pxr import Tf, Usd, UsdGeom
 
-from usd_mcp.common import open_stage, plain, require_attribute, require_prim, root_layer_stack
+from usd_mcp.common import (
+    bounded_value,
+    open_stage,
+    plain,
+    require_attribute,
+    require_prim,
+    root_layer_stack,
+    value_brief,
+)
 from usd_mcp.compose import edit_target_verdict, layer_in_root_stack
 
 AUDIT_LOG_ENV = "USD_MCP_AUDIT_LOG"
@@ -127,7 +135,12 @@ def _plan(kind, name, prior, new, layer, verdict, confirm):
         "applied": False,
         "confirmed": confirm,
         "target_layer": layer.identifier,
-        "change": {"kind": kind, "name": name, "from": prior, "to": plain(new)},
+        "change": {
+            "kind": kind,
+            "name": name,
+            "from": bounded_value(prior),
+            "to": bounded_value(plain(new)),
+        },
         "would_win": verdict["would_win"],
         "blocked_by": verdict["blocked_by"],
         "outranked_by": verdict["outranked_by"],
@@ -147,17 +160,25 @@ def _plan_explanation(verdict, confirm):
 
 
 def _applied(plan, stage_path, prim, layer, name, prior, after):
+    """The applied result, and the audit entry that must survive it.
+
+    The result is bounded; the audit log is not. A record of what was authored is worth
+    nothing if it records only the first fifty elements of what was authored.
+    """
     plan = dict(plan)
     plan["applied"] = True
-    plan["resolved_value_after"] = after
+    plan["resolved_value_after"] = bounded_value(after)
     if plan["blocked_by"] == "strength":
         plan["explanation"] = (
             f"Authored into {layer.identifier}, and the resolved value did not change: "
-            f"{plan['outranked_by']['layer']} authors {plan['outranked_by']['value']!r} and is "
-            f"stronger. The opinion is now in the layer you asked for, outranked where it sits."
+            f"{plan['outranked_by']['layer']} authors "
+            f"{value_brief(plan['outranked_by']['value'])} and is stronger. The opinion is now "
+            f"in the layer you asked for, outranked where it sits."
         )
     else:
-        plan["explanation"] = f"Authored into {layer.identifier}. {name} is now {after!r}."
+        plan["explanation"] = (
+            f"Authored into {layer.identifier}. {name} is now {value_brief(after)}."
+        )
     plan["audit_log"] = _audit(
         stage_path, str(prim.GetPath()), layer.identifier, name, prior, after
     )
@@ -178,7 +199,10 @@ def _metadata_verdict(stage, prim, layer, field):
         strength = order.get(spec.layer.identifier)
         if strength is None or strength >= target_strength or not spec.HasInfo(field):
             continue
-        blocker = {"layer": spec.layer.identifier, "value": plain(spec.GetInfo(field))}
+        blocker = {
+            "layer": spec.layer.identifier,
+            "value": bounded_value(plain(spec.GetInfo(field))),
+        }
         break
 
     return {
@@ -192,7 +216,7 @@ def _metadata_verdict(stage, prim, layer, field):
             f"`{field}`."
             if blocker is None
             else f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
-            f"authors `{field}` = {blocker['value']!r} and is stronger."
+            f"authors `{field}` = {value_brief(blocker['value'])} and is stronger."
         ),
     }
 

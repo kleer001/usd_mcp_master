@@ -444,27 +444,47 @@ naming what was left out:
 ```
 
 That key is absent when nothing was dropped, so its presence is the signal. Bounded
-fields: `prims_added`, `prims_removed`, `prims_retyped`, `attributes_changed`, `layers`,
-`root_layer_stack`, `layer_stack`, `authored_opinions`, `composition_arcs`, `materials`,
-`shaders`, `unportable_shaders`.
+fields: `attributes_changed`, `authored_opinions`, `composition_arcs`, `layer_stack`,
+`layers`, `materials`, `prims_added`, `prims_removed`, `prims_retyped`,
+`root_layer_stack`, `selected_in`, `shaders`, `unportable_shaders`, `variant_sets`,
+`variants`.
+
+That list is checked against the source rather than maintained by hand:
+`test_safety_contract.py` parses every `bounded()` call in the package and fails the
+build if the two disagree. A prose list of field names drifts the moment a field is
+added, and a stale list here would be the same species of wrong answer the tools refuse
+to give.
 
 Aggregates are never bounded. `diff_stages.counts`, `profile_stage.time`,
 `check_portability.summary`, and every `findings` list are computed over everything the
 tool examined, not over the slice it reported — a count that counted only what survived
 the trim would be the confident wrong answer this server exists to avoid.
 
-**What is not bounded.** Two paths can still return a result larger than a context
-window, and neither is covered by the field list above:
+**Values as well as lists.** An array is the one value type with no upper size — a
+mesh's `points` is a single attribute and megabytes of JSON — so every field carrying an
+authored value is bounded too: `resolved_value`, an opinion's `value`,
+`current_resolved_value`, `value_that_would_survive`, `diff_stages`' `value_a` and
+`value_b`, and the write path's `change.from`, `change.to`, and `resolved_value_after`.
 
-- **An attribute's own value.** `plain()` converts a `VtArray` entry for entry, so
-  `explain_value` on a 50,000-point mesh's `points` returns about 2.8 MB. Every field
-  carrying an authored value is affected — `resolved_value`, an opinion's `value`, and
-  `diff_stages`' `value_a` and `value_b`.
-- **`explain_variants`.** Its `variant_sets`, each set's `variants`, and `selected_in`
-  are returned whole.
+A trimmed array becomes a dict rather than a shorter list, because a shorter list reads
+as the whole value and nothing in it says otherwise:
 
-Both are stated here rather than fixed quietly: a caller sizing its own budget needs to
-know where the guarantee stops.
+```json
+"resolved_value": { "elements": [ ... 50 ... ],
+                    "elements_truncated": { "reported": 50, "total": 50000 } }
+```
+
+Explanations get the same treatment through `value_brief`, which names a long array
+(`an array of 50000 values`) rather than spelling it into the prose.
+
+**Where exactness wins instead.** Two paths deliberately keep whole values:
+
+- **Comparison.** `plain()` is never trimmed, and `diff_stages` compares its output
+  element by element. Trimming before comparing would report two different meshes as
+  identical — a confident wrong answer, which costs more than a large one. Only what the
+  diff *reports* is bounded.
+- **The audit log.** `write.py` records every element authored. A record of the first
+  fifty elements of an edit is not a record of that edit.
 
 Where a list has a meaningful order, it is sorted before it is trimmed, so the bound
 drops the least important end: opinions and composition arcs strongest first, profiled

@@ -486,3 +486,39 @@ def wide(tmp_path):
         root.write_text(_wide_root(variant, names))
         stages[variant] = str(root)
     return stages["a"], stages["b"]
+
+
+ARRAY_POINTS = 200
+VARIANT_COUNT = 60
+
+
+@pytest.fixture
+def bulky(tmp_path):
+    """A stage whose size lives in one attribute value and one variant set.
+
+    Neither is a long *list of results* — they are a single authored value and a single
+    prim's variants — so the result-list bound does not reach them and they need their
+    own. The mesh carries an array longer than the bound; `Switch` offers more variants
+    than the bound; and `points` differs between the two stages only at its **last**
+    element, which is what a diff must still catch after the reported value is trimmed.
+    """
+    from pxr import Gf, Usd, UsdGeom, Vt
+
+    def build(name, tweak_last):
+        path = tmp_path / name
+        stage = Usd.Stage.CreateNew(str(path))
+        mesh = UsdGeom.Mesh.Define(stage, "/Mesh")
+        points = [Gf.Vec3f(i, i, i) for i in range(ARRAY_POINTS)]
+        if tweak_last:
+            points[-1] = Gf.Vec3f(-1, -2, -3)
+        mesh.GetPointsAttr().Set(Vt.Vec3fArray(points))
+
+        switch = stage.DefinePrim("/Switch", "Xform")
+        variants = switch.GetVariantSets().AddVariantSet("take")
+        for index in range(VARIANT_COUNT):
+            variants.AddVariant(f"take{index:03d}")
+        variants.SetVariantSelection("take000")
+        stage.GetRootLayer().Save()
+        return str(path)
+
+    return build("bulky_a.usda", False), build("bulky_b.usda", True)

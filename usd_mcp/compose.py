@@ -13,11 +13,13 @@ from pxr import Usd
 
 from usd_mcp.common import (
     bounded,
+    bounded_value,
     open_stage,
     plain,
     require_attribute,
     require_prim,
     root_layer_stack,
+    value_brief,
 )
 
 
@@ -83,12 +85,12 @@ def explain_variants(stage_path, prim_path):
             {
                 "name": name,
                 "selection": selection or None,
-                "variants": list(variant_set.GetVariantNames()),
-                "selected_in": _selection_opinions(prim, name),
+                **bounded("variants", list(variant_set.GetVariantNames())),
+                **bounded("selected_in", _selection_opinions(prim, name)),
             }
         )
 
-    return {"prim": str(prim.GetPath()), "variant_sets": sets}
+    return {"prim": str(prim.GetPath()), **bounded("variant_sets", sets)}
 
 
 def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
@@ -108,7 +110,7 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "target_layer": layer.identifier,
-        "current_resolved_value": plain(attr.Get()),
+        "current_resolved_value": bounded_value(plain(attr.Get())),
         **bounded(
             "layer_stack", [candidate.identifier for candidate in root_layer_stack(stage)]
         ),
@@ -156,7 +158,7 @@ def edit_target_verdict(prim, attr, layer):
         winner = opinions[0]
         blocker = {
             "layer": winner.layer.identifier,
-            "value": plain(winner.default) if winner.HasInfo("default") else None,
+            "value": bounded_value(plain(winner.default)) if winner.HasInfo("default") else None,
         }
 
     # would_win answers "would an edit here take effect", which needs both a layer that
@@ -171,7 +173,7 @@ def edit_target_verdict(prim, attr, layer):
         "blocked_by": blocked_by,
         "target_writable": writable,
         "outranked_by": blocker if blocked_by == "strength" else None,
-        "value_that_would_survive": plain(stronger.Get()) if outranked else None,
+        "value_that_would_survive": bounded_value(plain(stronger.Get())) if outranked else None,
         "explanation": _edit_target_explanation(layer, blocked_by, blocker),
     }
 
@@ -196,8 +198,8 @@ def _edit_target_explanation(layer, blocked_by, blocker):
     if blocked_by == "strength":
         return (
             f"An opinion authored in {layer.identifier} would lose and the resolved value "
-            f"would not change. {blocker['layer']} already authors {blocker['value']!r} and "
-            f"is stronger."
+            f"would not change. {blocker['layer']} already authors "
+            f"{value_brief(blocker['value'])} and is stronger."
         )
     return (
         f"An opinion authored in {layer.identifier} would win: no layer stronger than it "

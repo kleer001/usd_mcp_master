@@ -213,3 +213,41 @@ def bounded(field, items, limit=MAX_ITEMS):
         field: items[:limit],
         f"{field}_truncated": {"reported": limit, "total": len(items)},
     }
+
+
+def bounded_value(value):
+    """An authored value, trimmed when it is a long array, saying so when it is.
+
+    An array is the one value type with no upper size: a mesh's `points` is a single
+    attribute and megabytes of JSON, which overruns a caller for the same reason an
+    unbounded result list does. A trimmed array becomes a dict rather than a shorter
+    list, because a shorter list reads as the whole value and nothing in it says
+    otherwise.
+
+    `plain()` itself stays exact. `diff_stages` compares its output element by element,
+    and a comparison against a truncated array would report two different meshes as
+    identical — a confident wrong answer, which costs more than a large one.
+    """
+    if isinstance(value, list) and len(value) > MAX_ITEMS:
+        return {
+            "elements": value[:MAX_ITEMS],
+            "elements_truncated": {"reported": MAX_ITEMS, "total": len(value)},
+        }
+    return value
+
+
+def value_brief(value):
+    """A value as it reads inside a sentence, with a long array named rather than spelled.
+
+    The explanations are prose meant to be read. Interpolating fifty thousand floats
+    into one reproduces, in the explanation, exactly the overrun `bounded_value` exists
+    to prevent.
+
+    Takes a value either side of `bounded_value`, because an explanation is usually
+    built from the same dict the result reports.
+    """
+    if isinstance(value, dict) and "elements_truncated" in value:
+        return f"an array of {value['elements_truncated']['total']} values"
+    if isinstance(value, list) and len(value) > MAX_ITEMS:
+        return f"an array of {len(value)} values"
+    return repr(value)

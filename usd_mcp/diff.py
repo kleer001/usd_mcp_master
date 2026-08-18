@@ -16,7 +16,7 @@ Reads only. Nothing here opens a stage for editing or touches a layer's contents
 
 from pxr import Usd
 
-from usd_mcp.common import bounded, open_layer, open_stage, plain, prim_specs
+from usd_mcp.common import bounded, bounded_value, open_layer, open_stage, plain, prim_specs
 
 SCOPES = ("composed", "layer")
 
@@ -136,8 +136,8 @@ def _change(prim_path, name, attr_a, attr_b, tolerance):
         "attribute": name,
         "authored_a": attr_a is not None,
         "authored_b": attr_b is not None,
-        "value_a": attr_a["default"] if attr_a else None,
-        "value_b": attr_b["default"] if attr_b else None,
+        "value_a": bounded_value(attr_a["default"]) if attr_a else None,
+        "value_b": bounded_value(attr_b["default"]) if attr_b else None,
         "time_samples": (
             {
                 "count_a": len(times_a),

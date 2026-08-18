@@ -10,6 +10,7 @@ from pxr import Sdf, Usd, UsdGeom
 
 from usd_mcp.common import (
     bounded,
+    bounded_value,
     open_stage,
     plain,
     require_attribute,
@@ -49,7 +50,7 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "type_name": str(attr.GetTypeName()),
-        "resolved_value": plain(attr.Get(tc)),
+        "resolved_value": bounded_value(plain(attr.Get(tc))),
         "resolved_from": str(resolve_info.GetSource()),
         "time_code": "default" if time_code is None else time_code,
         **bounded("authored_opinions", opinions),
@@ -131,7 +132,7 @@ def _describe_spec(spec):
         "path": str(spec.path),
         "specifier": str(owner.specifier) if owner else None,
         "has_default": has_default,
-        "value": plain(spec.default) if has_default else None,
+        "value": bounded_value(plain(spec.default)) if has_default else None,
         "time_samples": layer.GetNumTimeSamplesForPath(spec.path),
     }
 

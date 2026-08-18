@@ -326,10 +326,20 @@ summaries, and findings are computed over everything regardless, and lists with 
 meaningful order are sorted before they are trimmed, so what survives is the strongest
 opinion, the costliest layer, the material least likely to render.
 
-Two things are **not** bounded, and a large enough stage still overruns a context window
-through either: an attribute's own value, so `explain_value` on a 50,000-point mesh's
-`points` returns megabytes, and the variant lists from `explain_variants`. The full list
-of bounded fields is in [SPEC.md](SPEC.md#result-bounds).
+An attribute's own value is bounded on the same terms, because a mesh's `points` is a
+single attribute and megabytes of JSON. A trimmed array comes back as a dict rather than
+a shorter list, so it cannot be mistaken for the whole value:
+
+```json
+"resolved_value": { "elements": [ ... 50 ... ],
+                    "elements_truncated": { "reported": 50, "total": 50000 } }
+```
+
+Two things stay exact on purpose. `diff_stages` **compares** whole arrays and only
+trims what it reports, so a mesh that differs at its fifty-thousandth point is still
+reported as different. And the write path's audit log records every element authored —
+a record of half an edit records nothing. The full list of bounded fields is in
+[SPEC.md](SPEC.md#result-bounds).
 
 ## Resources and prompts
 

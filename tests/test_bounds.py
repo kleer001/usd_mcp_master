@@ -16,12 +16,13 @@ import json
 
 import pytest
 
-from usd_mcp.common import MAX_ITEMS, bounded
-from usd_mcp.compose import explain_prim
+from usd_mcp.common import MAX_ITEMS, bounded, bounded_value, value_brief
+from usd_mcp.compose import explain_prim, explain_variants
 from usd_mcp.diff import diff_stages
 from usd_mcp.explain import explain_value
 from usd_mcp.portability import _SEVERITY, check_portability
 from usd_mcp.profile import profile_stage
+from usd_mcp.write import set_attribute
 
 
 def assert_bounded(result, field, total):
@@ -153,3 +154,117 @@ def test_no_result_is_large_enough_to_cost_a_context_window(call, wide):
     context window rather than the whole of one.
     """
     assert len(json.dumps(call(wide))) < 25_000
+
+
+class TestBoundedValue:
+    """A single authored value is not a result list, and needs its own bound.
+
+    A mesh's `points` is one attribute and megabytes of JSON. Before this existed,
+    `explain_value` on a 50,000-point mesh returned 2.83 MB — worse than the whole-stage
+    diff the list bound was built to prevent.
+    """
+
+    def test_a_short_array_passes_through_as_a_list(self):
+        assert bounded_value([1, 2, 3]) == [1, 2, 3]
+
+    def test_a_scalar_is_untouched(self):
+        assert bounded_value(5.0) == 5.0
+        assert bounded_value(None) is None
+        assert bounded_value("inherited") == "inherited"
+
+    def test_an_array_at_the_bound_stays_a_list(self):
+        items = list(range(MAX_ITEMS))
+        assert bounded_value(items) == items
+
+    def test_a_long_array_becomes_a_dict_that_says_it_was_trimmed(self):
+        """A dict, not a shorter list: a shorter list reads as the whole value."""
+        result = bounded_value(list(range(200)))
+        assert result["elements"] == list(range(MAX_ITEMS))
+        assert result["elements_truncated"] == {"reported": MAX_ITEMS, "total": 200}
+
+    def test_the_reported_value_is_bounded(self, bulky):
+        result = explain_value(bulky[0], "/Mesh", "points")
+        assert result["resolved_value"]["elements_truncated"]["total"] == 200
+        assert len(result["resolved_value"]["elements"]) == MAX_ITEMS
+
+    def test_the_losing_opinions_value_is_bounded_too(self, bulky):
+        opinion = explain_value(bulky[0], "/Mesh", "points")["authored_opinions"][0]
+        assert opinion["value"]["elements_truncated"]["total"] == 200
+
+    def test_the_whole_result_is_small(self, bulky):
+        assert len(json.dumps(explain_value(bulky[0], "/Mesh", "points"))) < 25_000
+
+
+class TestComparisonStaysExact:
+    """`plain()` is never trimmed. Reporting is bounded; comparing is not.
+
+    A diff that compared truncated arrays would call two different meshes identical,
+    which costs more than a large answer ever does.
+    """
+
+    def test_a_change_past_the_bound_is_still_detected(self, bulky):
+        """The two stages differ only at the last element, far beyond the 50 reported."""
+        result = diff_stages(*bulky)
+        assert result["identical"] is False
+        assert result["counts"]["attributes_changed"] == 1
+
+    def test_but_the_reported_values_are_bounded(self, bulky):
+        change = diff_stages(*bulky)["attributes_changed"][0]
+        assert change["value_a"]["elements_truncated"]["total"] == 200
+        assert change["value_b"]["elements_truncated"]["total"] == 200
+
+    def test_a_stage_against_itself_is_still_identical(self, bulky):
+        assert diff_stages(bulky[0], bulky[0])["identical"] is True
+
+    def test_the_diff_result_is_small(self, bulky):
+        assert len(json.dumps(diff_stages(*bulky))) < 25_000
+
+
+class TestVariantBounds:
+    def test_the_variant_list_is_bounded(self, bulky):
+        variant_set = explain_variants(bulky[0], "/Switch")["variant_sets"][0]
+        assert len(variant_set["variants"]) == MAX_ITEMS
+        assert variant_set["variants_truncated"] == {"reported": MAX_ITEMS, "total": 60}
+
+    def test_the_selection_itself_survives_the_bound(self, bulky):
+        """The selection is reported whether or not it is among the variants listed."""
+        variant_set = explain_variants(bulky[0], "/Switch")["variant_sets"][0]
+        assert variant_set["selection"] == "take000"
+
+
+class TestWriteBounds:
+    def test_the_reported_diff_is_bounded(self, bulky):
+        result = set_attribute(
+            bulky[0], "/Mesh", "points", [(0, 0, 0)] * 200, bulky[0], confirm=False
+        )
+        assert result["change"]["from"]["elements_truncated"]["total"] == 200
+        assert result["change"]["to"]["elements_truncated"]["total"] == 200
+
+    def test_the_explanation_names_the_array_rather_than_spelling_it(self, bulky):
+        """Prose built from a 50,000-element array reproduces the overrun it avoids."""
+        result = set_attribute(
+            bulky[0], "/Mesh", "points", [(0, 0, 0)] * 200, bulky[0], confirm=False
+        )
+        assert len(result["explanation"]) < 1000
+
+    def test_the_audit_log_keeps_every_element(self, bulky, tmp_path, monkeypatch):
+        """The result is bounded; the record is not. A partial record records nothing."""
+        log = tmp_path / "audit.log"
+        monkeypatch.setenv("USD_MCP_AUDIT_LOG", str(log))
+        set_attribute(
+            bulky[0], "/Mesh", "points", [(1, 1, 1)] * 200, bulky[0], confirm=True
+        )
+        entry = json.loads(log.read_text().splitlines()[-1])
+        assert len(entry["to"]) == 200
+
+
+class TestValueBrief:
+    def test_a_scalar_reads_as_itself(self):
+        assert value_brief(5.0) == "5.0"
+
+    def test_a_long_array_is_named_by_its_length(self):
+        assert value_brief(list(range(200))) == "an array of 200 values"
+
+    def test_it_reads_an_already_bounded_value(self):
+        """Explanations are built from the same dict the result reports."""
+        assert value_brief(bounded_value(list(range(200)))) == "an array of 200 values"

@@ -9,6 +9,7 @@ about what its dependencies contain.
 import argparse
 import ast
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
@@ -225,3 +226,37 @@ def test_every_cli_mutating_command_gates_on_confirm_and_an_explicit_layer(name)
 
     assert "target_layer" in actions, f"{name} does not demand a target layer"
     assert not actions["target_layer"].option_strings, f"{name} makes the target layer optional"
+
+
+def _bounded_fields(tree):
+    """Every field name passed to `bounded()` in one module."""
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "bounded"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            yield node.args[0].value
+
+
+def test_spec_lists_exactly_the_fields_the_code_bounds():
+    """SPEC.md#result-bounds names every bounded field, and no field it does not bound.
+
+    The list is prose, and prose drifts the moment a field is added. Parsing the package
+    for `bounded()` calls and comparing is what keeps the published list honest — a
+    reader sizing a context budget against a stale list is being given a wrong answer of
+    exactly the kind the tools refuse to give.
+    """
+    in_code = {field for _, tree in _modules() for field in _bounded_fields(tree)}
+    assert in_code, "no bounded() calls found; the parse is broken, not the package"
+
+    spec = (Path(__file__).resolve().parent.parent / "SPEC.md").read_text(encoding="utf-8")
+    clause = spec[spec.index("Bounded\nfields:") : spec.index("That list is checked")]
+    in_spec = set(re.findall(r"`([a-z_]+)`", clause))
+
+    assert in_spec == in_code, (
+        f"SPEC.md and the code disagree about bounded fields. "
+        f"Only in SPEC: {sorted(in_spec - in_code)}. Only in code: {sorted(in_code - in_spec)}."
+    )
