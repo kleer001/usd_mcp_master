@@ -6,12 +6,14 @@ parse `usd_mcp/` and no further: the claims are about what this repository does,
 about what its dependencies contain.
 """
 
+import argparse
 import ast
 import asyncio
 from pathlib import Path
 
 import pytest
 
+from usd_mcp.cli import build_parser
 from usd_mcp.server import build_server
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent / "usd_mcp"
@@ -20,6 +22,10 @@ PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 # The complete set of tools that may write. Enabling writes may add these and nothing
 # else; see SPEC.md#safety-contract item 2.
 MUTATING_TOOLS = {"set_attribute", "set_visibility", "set_active"}
+
+# The same set as the CLI names it. Two front doors, one write path: a mutating command
+# that exists on one and not the other would be a second contract nobody wrote down.
+MUTATING_COMMANDS = {"set-attribute", "set-visibility", "set-active"}
 
 # Contract 1. Reaching the network needs one of these; none is a false positive in a
 # server whose entire job is reading local files.
@@ -170,3 +176,52 @@ def test_dependencies_are_released_packages():
     block = text[start : text.index("]", start)]
     for marker in ("git+", "http://", "https://", "file://", " @ "):
         assert marker not in block, f"dependency block names a {marker!r} source: {block!r}"
+
+
+def _cli_commands(enable_write):
+    """Every subcommand the CLI registers, by name.
+
+    `argparse` publishes no way to enumerate its own subcommands, so this reaches for
+    the action holding them. Private, and worth it: the alternative is a contract that
+    trusts the CLI to keep a promise the server has to prove.
+    """
+    parser = build_parser(enable_write=enable_write)
+    action = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    return action.choices
+
+
+def test_the_default_cli_has_no_write_path():
+    """Contract 2, at the second front door: `usd-explain` registers no write command.
+
+    Absent from the command list rather than refused inside it, exactly as the server's
+    tool list is — so `usd-explain set-attribute` is an unrecognised command.
+    """
+    commands = _cli_commands(enable_write=False)
+    assert commands, "CLI registered no commands"
+    exposed = MUTATING_COMMANDS & set(commands)
+    assert not exposed, f"default CLI exposes a write path: {exposed}"
+
+
+def test_cli_mutating_commands_are_exactly_the_declared_set():
+    """Contract 2: enabling writes adds these three commands and nothing else."""
+    added = set(_cli_commands(enable_write=True)) - set(_cli_commands(enable_write=False))
+    assert added == MUTATING_COMMANDS, f"undeclared mutating commands: {added ^ MUTATING_COMMANDS}"
+
+
+def test_both_front_doors_expose_the_same_mutating_set():
+    """One write path, named twice. Neither front door may grow a mutation the other lacks."""
+    assert {name.replace("-", "_") for name in MUTATING_COMMANDS} == MUTATING_TOOLS
+
+
+@pytest.mark.parametrize("name", sorted(MUTATING_COMMANDS))
+def test_every_cli_mutating_command_gates_on_confirm_and_an_explicit_layer(name):
+    """Contract 2: the dry run is the default here too, and the layer is never inferred."""
+    actions = {action.dest: action for action in _cli_commands(enable_write=True)[name]._actions}
+
+    assert "confirm" in actions, f"{name} has no confirm gate"
+    confirm = actions["confirm"]
+    assert confirm.default is False, f"{name} does not default to a dry run"
+    assert confirm.option_strings == ["--confirm"], f"{name} makes confirm positional"
+
+    assert "target_layer" in actions, f"{name} does not demand a target layer"
+    assert not actions["target_layer"].option_strings, f"{name} makes the target layer optional"

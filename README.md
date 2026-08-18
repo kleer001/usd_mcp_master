@@ -8,7 +8,8 @@ stages**, **why is this stage so expensive**, and **will anyone else's renderer 
 shading**. It can author too, if you ask it to.
 
 It is local-only and has no network path. It is read-only by default: the write path
-is absent unless you start it with `--enable-write`.
+is absent unless you start it with `--enable-write`. It runs as an MCP server
+(`usd-mcp`) or as a command-line tool (`usd-explain`), over the same code.
 
 ## Why
 
@@ -35,6 +36,23 @@ Register with an MCP client (Claude Code shown):
 ```
 claude mcp add usd-mcp -- usd-mcp
 ```
+
+## Command line
+
+The same answers without an MCP client in the way. `usd-explain` calls the same
+functions the tools do and prints JSON:
+
+```
+$ usd-explain value shot.usda /World/Ball radius
+$ usd-explain why-not-visible shot.usda /World/Set/Chair
+$ usd-explain edit-target shot.usda /World/Ball radius asset.usda
+$ usd-explain diff before.usda after.usda --tolerance 1e-6
+```
+
+`usd-explain --help` lists all nine. Writing is opt-in here too: without
+`--enable-write` there is no `set-attribute` command to call, and with it the dry run is
+still the default until you pass `--confirm`. The full command table is in
+[SPEC.md](SPEC.md#command-line).
 
 ## Tools
 

@@ -31,6 +31,7 @@ dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4"]
 
 [project.scripts]
 usd-mcp = "usd_mcp.server:main"
+usd-explain = "usd_mcp.cli:main"
 
 [build-system]
 requires = ["hatchling"]

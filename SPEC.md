@@ -10,12 +10,14 @@ run — see **Enforcement** below.
    Stage contents — prim paths, asset names, layer identifiers — never leave the machine.
    Scene graph contents are covered material under a typical VFX NDA; a tool that
    transmits them is not evaluable regardless of quality.
-2. **No write path by default.** `usd-mcp` registers no tool that can author. The three
-   mutating tools exist only when the server is started with `--enable-write`: the write
-   path is *absent from the tool list*, not disabled inside it, so a client cannot
-   discover or call one. Authoring is confined to `usd_mcp/write.py`; every other module
-   in the package reads. With writes enabled, every mutation names its target layer,
-   writes nothing until `confirm=true`, and is appended to the audit log.
+2. **No write path by default.** `usd-mcp` registers no tool that can author, and
+   `usd-explain` registers no command that can. The three mutations exist only when the
+   front door is started with `--enable-write`: the write path is *absent from the tool
+   list and the command list*, not disabled inside them, so neither a client nor a shell
+   can discover or call one. Both doors expose the same three and no more. Authoring is
+   confined to `usd_mcp/write.py`; every other module in the package reads. With writes
+   enabled, every mutation names its target layer, writes nothing until `confirm=true`,
+   and is appended to the audit log.
 3. **`pip install` only.** No install script, no piped shell, no downloaded binary.
    Facilities run vetted, pinned package repositories precisely so that can't happen.
 4. **No self-update.** The server has no update command and no version check. Shows
@@ -391,6 +393,38 @@ one boundary rather than each growing its own. Registration lives in
 `resources.py` and `prompts.py` alongside and `server.py` reduced to a list of
 `register` calls. Composition logic that a test can call directly, without a server, is
 logic a test actually covers.
+
+## Command line
+
+`usd-explain` is a second front door onto the same functions. Every module below the
+registration layer imports nothing from `mcp`, so the CLI is not a reimplementation:
+`usd-explain value` and the `explain_value` tool call one function and answer
+identically. Results are JSON on stdout; a failure is a message on stderr and exit
+status 2.
+
+The binary name supplies the verb, so the commands drop it:
+
+| Command | Function |
+| --- | --- |
+| `usd-explain value STAGE PRIM ATTR [--time-code F]` | `explain_value` |
+| `usd-explain why-not-visible STAGE PRIM [--no-payloads]` | `why_not_visible` |
+| `usd-explain prim STAGE PRIM` | `explain_prim` |
+| `usd-explain variants STAGE PRIM` | `explain_variants` |
+| `usd-explain edit-target STAGE PRIM ATTR LAYER` | `explain_edit_target` |
+| `usd-explain resolve STAGE ASSET [--anchor-layer L]` | `resolve_path` |
+| `usd-explain diff STAGE_A STAGE_B [--tolerance F] [--scope S]` | `diff_stages` |
+| `usd-explain profile STAGE [--no-payloads]` | `profile_stage` |
+| `usd-explain portability STAGE TARGET` | `check_portability` |
+| `usd-explain --enable-write set-attribute STAGE PRIM ATTR VALUE LAYER [--confirm]` | `set_attribute` |
+| `usd-explain --enable-write set-visibility STAGE PRIM visible\|invisible LAYER [--confirm]` | `set_visibility` |
+| `usd-explain --enable-write set-active STAGE PRIM active\|inactive LAYER [--confirm]` | `set_active` |
+
+`VALUE` is read as JSON so its type is stated rather than guessed: `5` is a number,
+`'"red"'` is a string, `[[0, 1, 0]]` is an array of colours. A CLI that inferred the
+difference would author the wrong type and report success.
+
+There is no `--cache-stages`. The cache pays for itself across thousands of calls in one
+process; a CLI invocation opens one stage and exits.
 
 ## Result bounds
 
