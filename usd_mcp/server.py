@@ -56,7 +56,7 @@ def build_server(enable_write=False):
     """Build the server. Without `enable_write` it has no tool that can author."""
     server = MCPServer(
         name="usd-mcp",
-        version="0.2.0",
+        version="0.3.0",
         instructions=WRITE_INSTRUCTIONS if enable_write else READ_ONLY_INSTRUCTIONS,
     )
 

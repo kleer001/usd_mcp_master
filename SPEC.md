@@ -579,9 +579,9 @@ land without authoring one, which is most of what phase 2 was for.
 **Phase 2 — dry run (absorbed).** A separate `what_would_change_if` was not built.
 `explain_edit_target` answers where an edit lands without authoring one, and the default
 call to every mutating tool returns that same diff and writes nothing — so the dry run
-is what the write tool does rather than a tool beside it that a caller can skip. No
-throwaway session layer is involved: nothing is authored to predict the outcome, which
-is why the prediction is safe to run against a production stage.
+is what the write tool does rather than a tool beside it that a caller must remember to
+reach for. No throwaway session layer is involved: nothing is authored to predict the
+outcome, which is why the prediction is safe to run against a production stage.
 
 **Phase 3 — write (implemented, opt-in).** `set_attribute`, `set_visibility`,
 `set_active`, registered only under `--enable-write`. Each takes an
@@ -593,10 +593,15 @@ to it, not because the code cannot write.
 That default is structural rather than conventional: every mutating tool takes
 `confirm: bool = False` and, while it is false, writes nothing and returns the phase 2
 diff — the layer the edit would land in, what it would outrank, and which resolved
-values would move. Committing requires a second call with `confirm=True`, which a client
-can only make after showing the diff. The dry run is therefore not a separate tool an
-agent may skip; it is what the write tool does by default. Mutating tools are annotated
-`destructiveHint: true` and are the only tools in the server not annotated read-only.
+values would move.
+
+What that buys is honest about its own limits. A caller that passes `confirm=True` on its
+first call writes immediately; nothing here enforces a prior dry run, and a tool schema
+cannot. What the default does guarantee is that the diff costs nothing to obtain and
+arrives unasked, so skipping it is a decision rather than an oversight — and
+`test_safety_contract.py` fails the build if `confirm` stops defaulting to false or
+becomes required. Mutating tools are annotated `destructiveHint: true` and are the only
+tools in the server not annotated read-only.
 
 Standalone USD authoring earns its keep where no DCC is in the loop: headless batch
 fixes across many layers, pipeline and TD work, CI, repairing a shot without opening

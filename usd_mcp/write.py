@@ -10,8 +10,9 @@ Three rules hold for every function here, and each is a defect if it stops holdi
 1. **The edit target is given, never inferred.** Guessing which layer an edit belongs
    in is the failure the rest of this package exists to diagnose.
 2. **Nothing is written until `confirm=True`.** The default call reports what the
-   edit would do and touches nothing, so the diff is not a separate step a caller
-   can skip.
+   edit would do and touches nothing, so a caller gets the diff without asking for
+   it. A caller that passes `confirm=True` on its first call writes immediately —
+   the default is a diff, not a gate, and nothing here enforces a second call.
 3. **Every applied mutation is appended to the audit log** before the call returns.
 """
 
