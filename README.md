@@ -265,6 +265,22 @@ universal output is wired outside the portable set and only some hosts will read
 the render context token itself. An unrecognised target raises rather than guess at a
 context nobody verified.
 
+## Result bounds
+
+Every list a stage can make arbitrarily long — changed attributes, layers, opinions,
+materials — is trimmed to 50 entries, and says so when it does:
+
+```json
+"attributes_changed": [ ... 50 entries ... ],
+"attributes_changed_truncated": { "reported": 50, "total": 10000 }
+```
+
+Without it, a diff of two 10,000-prim stages returns about 397,000 tokens and takes the
+agent asking the question down with it. Counts, summaries, and findings are computed
+over everything regardless, and lists with a meaningful order are sorted before they are
+trimmed, so what survives is the strongest opinion, the costliest layer, the material
+least likely to render. Details in `SPEC.md`.
+
 ## Resources and prompts
 
 Two resources let a client pull stage context without spending a tool call:

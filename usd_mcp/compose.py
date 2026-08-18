@@ -12,6 +12,7 @@ import os
 from pxr import Usd
 
 from usd_mcp.common import (
+    bounded,
     open_stage,
     plain,
     require_attribute,
@@ -26,6 +27,9 @@ def explain_prim(stage_path, prim_path):
     `explain_value` names the layer an opinion sits in. This names how that layer
     entered the stage at all — a reference, a payload, a variant, an inherit — which
     is what decides whether an override is even expressible from where you are.
+
+    `composition_arcs` and `layer_stack` are bounded, strongest first; a trimmed list
+    carries a companion `<field>_truncated` with the reported and total counts.
     """
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
@@ -54,9 +58,9 @@ def explain_prim(stage_path, prim_path):
         "prim": str(prim.GetPath()),
         "type_name": str(prim.GetTypeName()),
         "specifier": str(prim.GetSpecifier()),
-        "composition_arcs": arcs,
+        **bounded("composition_arcs", arcs),
         "instancing": _instancing(prim),
-        "layer_stack": [layer.identifier for layer in root_layer_stack(stage)],
+        **bounded("layer_stack", [layer.identifier for layer in root_layer_stack(stage)]),
     }
 
 
@@ -105,7 +109,9 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         "attribute": attribute_name,
         "target_layer": layer.identifier,
         "current_resolved_value": plain(attr.Get()),
-        "layer_stack": [candidate.identifier for candidate in root_layer_stack(stage)],
+        **bounded(
+            "layer_stack", [candidate.identifier for candidate in root_layer_stack(stage)]
+        ),
         **edit_target_verdict(prim, attr, layer),
     }
 

@@ -392,6 +392,36 @@ one boundary rather than each growing its own. Registration lives in
 `register` calls. Composition logic that a test can call directly, without a server, is
 logic a test actually covers.
 
+## Result bounds
+
+Every list a stage can make arbitrarily long is trimmed to 50 entries. A result that
+does not fit in the caller's context window is not a smaller answer, it is no answer:
+measured on a 200-layer, 10,000-prim stage before the bound existed, `diff_stages`
+returned 1.59 MB — about 397,000 tokens — and `profile_stage` 78 KB. Production robotics
+and geospatial scenes are larger again. The bound holds every result under about 25 KB.
+
+The trim is never silent. A list that was trimmed is accompanied by a sibling field
+naming what was left out:
+
+```json
+"attributes_changed": [ ... 50 entries ... ],
+"attributes_changed_truncated": { "reported": 50, "total": 10000 }
+```
+
+That key is absent when nothing was dropped, so its presence is the signal. Bounded
+fields: `prims_added`, `prims_removed`, `prims_retyped`, `attributes_changed`, `layers`,
+`root_layer_stack`, `layer_stack`, `authored_opinions`, `composition_arcs`, `materials`,
+`shaders`, `unportable_shaders`.
+
+Aggregates are never bounded. `diff_stages.counts`, `profile_stage.time`,
+`check_portability.summary`, and every `findings` list are computed over everything the
+tool examined, not over the slice it reported — a count that counted only what survived
+the trim would be the confident wrong answer this server exists to avoid.
+
+Where a list has a meaningful order, it is sorted before it is trimmed, so the bound
+drops the least important end: opinions and composition arcs strongest first, profiled
+layers by prim specs descending, materials by worst handoff verdict first.
+
 ## Stage cache
 
 Off by default; `--cache-stages` turns it on.

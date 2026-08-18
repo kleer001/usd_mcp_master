@@ -18,7 +18,7 @@ Reads only.
 
 from pxr import Sdr, UsdShade
 
-from usd_mcp.common import open_stage
+from usd_mcp.common import bounded, open_stage
 
 # Render context tokens, each verified against a primary source rather than inferred:
 # `ri` is `UsdRi.Tokens.renderContext` in USD itself; `glslfx` appears in USD's render
@@ -93,6 +93,12 @@ def check_portability(stage_path, target):
     `storm`, `materialx`, `preview`) or the context token itself (`ri`, `glslfx`,
     `arnold`, `mtlx`, or the empty string for the universal context). Anything else
     raises rather than guess at a context nobody verified.
+
+    `materials` is bounded, worst verdict first, so a library of thousands reports the
+    ones that will not survive the handoff rather than the ones that will. `summary`
+    and `readable` count every material regardless. Each terminal's `shaders` list is
+    bounded on its own. A trimmed list carries a companion `<field>_truncated` with the
+    reported and total counts.
     """
     context = _resolve_target(target)
     stage = open_stage(stage_path)
@@ -108,13 +114,20 @@ def check_portability(stage_path, target):
         {verdict: sum(1 for m in materials if m["verdict"] == verdict) for verdict in _SEVERITY}
     )
 
+    # Sorted before bounding, worst first: a bound applied to source order would report
+    # whichever materials the traversal reached first, which is not the question. A
+    # material that will not render at the far end outranks one that will.
+    materials.sort(key=lambda report: (-_SEVERITY[report["verdict"]], report["material"]))
+
     return {
         "stage": stage_path,
         "target": target,
         "render_context": context,
         "readable": summary["unreadable"] == 0 and summary["renderer_specific"] == 0,
-        "materials": materials,
+        **bounded("materials", materials),
         "summary": summary,
+        # Findings read every material, bounded or not: a count of what will not survive
+        # is only true if it counted all of them.
         "findings": _findings(materials, summary, context),
     }
 
@@ -183,8 +196,8 @@ def _terminal_report(material, name, compute, context):
         "verdict": verdict,
         "resolved_from_universal": bool(context) and not has_own,
         "source": str(source.GetPrim().GetPath()),
-        "shaders": shaders,
-        "unportable_shaders": [entry["id"] for entry in unportable],
+        **bounded("shaders", shaders),
+        **bounded("unportable_shaders", [entry["id"] for entry in unportable]),
     }
 
 

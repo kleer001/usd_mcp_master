@@ -183,3 +183,33 @@ def plain(value):
     if hasattr(value, "__len__") and not isinstance(value, str):
         return [plain(item) for item in value]
     return str(value)
+
+
+# A result that does not fit in the caller's context window is not a smaller answer, it
+# is no answer: an agent that receives 397,000 tokens of changed attributes loses the
+# conversation the question was asked in. Measured on a 200-layer, 10,000-prim stage,
+# `diff_stages` returned 1.59 MB and `profile_stage` 78 KB, and production robotics and
+# geospatial scenes are larger again.
+#
+# Fifty holds every bounded result under about 25 KB. It is deliberately one number
+# rather than one per field: a caller reasoning about what it did not see should not
+# have to remember which list stops where.
+MAX_ITEMS = 50
+
+
+def bounded(field, items, limit=MAX_ITEMS):
+    """`{field: items}` trimmed to `limit`, saying so when the trim bit.
+
+    Truncation that does not announce itself reads as a complete answer, so a trimmed
+    list is always accompanied by `<field>_truncated`, giving how many were reported and
+    how many there were. That key is absent when nothing was dropped — its presence is
+    the signal. Splat the result into the dict being built:
+
+        return {"stage": stage_path, **bounded("layers", layers)}
+    """
+    if len(items) <= limit:
+        return {field: items}
+    return {
+        field: items[:limit],
+        f"{field}_truncated": {"reported": limit, "total": len(items)},
+    }

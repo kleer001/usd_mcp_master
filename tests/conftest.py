@@ -398,3 +398,91 @@ def looks(tmp_path):
     stage_path = tmp_path / "looks.usda"
     stage_path.write_text(LOOKS_USDA)
     return str(stage_path)
+
+
+WIDE_LAYERS = 60
+
+
+def _wide_layer(index, variant):
+    """One sublayer of the `wide` fixture, authoring a slice of every bounded list.
+
+    `Contested` collects an opinion per layer, so its property stack outruns the bound
+    on its own. The rest give the diff more added, removed, retyped, and changed prims
+    than it is allowed to itemise.
+    """
+    only = "gone" if variant == "a" else "new"
+    shifted = "Sphere" if variant == "a" else "Cube"
+    kept = index if variant == "a" else index + 100
+    return f"""#usda 1.0
+
+over "World"
+{{
+    over "Contested"
+    {{
+        double size = {index}
+    }}
+
+    def Xform "keep{index:03d}"
+    {{
+        double size = {kept}
+    }}
+
+    def {shifted} "shifted{index:03d}"
+    {{
+    }}
+
+    def Sphere "{only}{index:03d}"
+    {{
+    }}
+}}
+"""
+
+
+def _wide_root(variant, sublayers):
+    materials = "\n\n".join(
+        f'    def Material "Mat{i:03d}"\n    {{\n    }}' for i in range(WIDE_LAYERS)
+    )
+    paths = ",\n        ".join(f"@./{name}@" for name in sublayers)
+    return f"""#usda 1.0
+(
+    subLayers = [
+        {paths}
+    ]
+)
+
+def Xform "World"
+{{
+    def Xform "Contested"
+    {{
+    }}
+
+{materials}
+}}
+"""
+
+
+@pytest.fixture
+def wide(tmp_path):
+    """A stage pair that overruns the result bound in every list the bound applies to.
+
+    Sixty sublayers per stage, so the layer stack and the per-layer profile both exceed
+    `MAX_ITEMS`; one attribute carrying an opinion in every one of them, so the property
+    stack does too; sixty materials, so the portability report does; and a second stage
+    that changes, adds, removes, and retypes a prim per layer, so no list in a diff is
+    short enough to escape the bound.
+
+    Deliberately larger than the bound and no larger. The measured case that motivates
+    it — a 200-layer, 10,000-prim stage returning 1.59 MB — is too slow to build per
+    test, and the bound either holds at 60 or it does not hold at all.
+    """
+    stages = {}
+    for variant in ("a", "b"):
+        names = []
+        for index in range(WIDE_LAYERS):
+            name = f"wide_{variant}_{index:03d}.usda"
+            (tmp_path / name).write_text(_wide_layer(index, variant))
+            names.append(name)
+        root = tmp_path / f"wide_{variant}.usda"
+        root.write_text(_wide_root(variant, names))
+        stages[variant] = str(root)
+    return stages["a"], stages["b"]

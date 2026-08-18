@@ -16,7 +16,7 @@ Reads only. Nothing here opens a stage for editing or touches a layer's contents
 
 from pxr import Usd
 
-from usd_mcp.common import open_layer, open_stage, plain, prim_specs
+from usd_mcp.common import bounded, open_layer, open_stage, plain, prim_specs
 
 SCOPES = ("composed", "layer")
 
@@ -34,6 +34,10 @@ def diff_stages(stage_a, stage_b, tolerance=0.0, scope="composed"):
     means exact equality. Differences it absorbs are counted in `counts.within_tolerance`
     rather than discarded silently: that count is the answer to "was this a real edit or
     a re-export".
+
+    The itemised lists are bounded so a whole-stage difference cannot flood the caller.
+    `counts` is always the full total; a list that was trimmed carries a companion
+    `<field>_truncated` giving how many of how many are reported.
     """
     if tolerance < 0:
         raise ValueError(f"tolerance must not be negative: {tolerance}")
@@ -46,21 +50,30 @@ def diff_stages(stage_a, stage_b, tolerance=0.0, scope="composed"):
     result = _compare(prims_a, prims_b, tolerance)
     within_tolerance = result.pop("within_tolerance")
 
+    # `counts` is computed from the full lists and reported in full; only the itemised
+    # lists are bounded. Two wholly unrelated stages differ in every attribute, and the
+    # useful answer to that is the number, not ten thousand entries spelling it out.
+    counts = {
+        "prims_a": len(prims_a),
+        "prims_b": len(prims_b),
+        "added": len(result["prims_added"]),
+        "removed": len(result["prims_removed"]),
+        "retyped": len(result["prims_retyped"]),
+        "attributes_changed": len(result["attributes_changed"]),
+        "within_tolerance": within_tolerance,
+    }
+
     return {
         "stage_a": stage_a,
         "stage_b": stage_b,
         "scope": scope,
         "tolerance": tolerance,
-        **result,
-        "counts": {
-            "prims_a": len(prims_a),
-            "prims_b": len(prims_b),
-            "added": len(result["prims_added"]),
-            "removed": len(result["prims_removed"]),
-            "retyped": len(result["prims_retyped"]),
-            "attributes_changed": len(result["attributes_changed"]),
-            "within_tolerance": within_tolerance,
-        },
+        "identical": result["identical"],
+        **bounded("prims_added", result["prims_added"]),
+        **bounded("prims_removed", result["prims_removed"]),
+        **bounded("prims_retyped", result["prims_retyped"]),
+        **bounded("attributes_changed", result["attributes_changed"]),
+        "counts": counts,
     }
 
 

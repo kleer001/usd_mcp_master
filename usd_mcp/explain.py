@@ -8,7 +8,14 @@ serialise them without a translation step.
 
 from pxr import Sdf, Usd, UsdGeom
 
-from usd_mcp.common import open_stage, plain, require_attribute, require_prim, root_layer_stack
+from usd_mcp.common import (
+    bounded,
+    open_stage,
+    plain,
+    require_attribute,
+    require_prim,
+    root_layer_stack,
+)
 
 # Visibility and purpose inherit down namespace, so the answer to "why is this
 # invisible" is usually authored on an ancestor, not on the prim asked about.
@@ -21,6 +28,10 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
     The winning opinion is index 0. Losing opinions carry their own value, which
     is the question a sparse override actually raises: not "what is it" but
     "what did mine lose to".
+
+    Both lists are bounded, strongest first, so a deep stack reports the opinions
+    that decided the value rather than every layer that ever saw it. A trimmed list
+    carries a companion `<field>_truncated` with the reported and total counts.
     """
     stage = open_stage(stage_path)
     prim = require_prim(stage, prim_path)
@@ -41,8 +52,8 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
         "resolved_value": plain(attr.Get(tc)),
         "resolved_from": str(resolve_info.GetSource()),
         "time_code": "default" if time_code is None else time_code,
-        "authored_opinions": opinions,
-        "layer_stack": [layer.identifier for layer in root_layer_stack(stage)],
+        **bounded("authored_opinions", opinions),
+        **bounded("layer_stack", [layer.identifier for layer in root_layer_stack(stage)]),
     }
 
 

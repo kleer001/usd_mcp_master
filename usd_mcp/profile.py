@@ -16,7 +16,7 @@ profiles the stage as a session that deferred them sees it.
 
 from pxr import Usd
 
-from usd_mcp.common import open_stage, prim_specs, root_layer_stack
+from usd_mcp.common import bounded, open_stage, prim_specs, root_layer_stack
 
 # The default predicate also demands `PrimIsLoaded`, which hides the very prims a
 # payload profile is about: an unloaded payload's own prim, not just its contents.
@@ -31,6 +31,11 @@ def profile_stage(stage_path, load_payloads=True):
 
     `load_payloads` must match the session being asked about. Profiling with payloads
     loaded reports a scene the artist who deferred them is not paying for.
+
+    `layers` and `root_layer_stack` are bounded; a stage of a few hundred layers would
+    otherwise spend the whole answer listing them. `layers` is sorted by prim specs
+    descending, so what survives the bound is what costs the most to read. Every
+    aggregate under `time` is summed over all layers, bound or not.
     """
     stage = open_stage(stage_path, load_payloads=load_payloads)
 
@@ -48,11 +53,15 @@ def profile_stage(stage_path, load_payloads=True):
     return {
         "stage": stage_path,
         "payloads_loaded": load_payloads,
-        "root_layer_stack": [layer.identifier for layer in root_layer_stack(stage)],
-        "layers": layers,
+        **bounded(
+            "root_layer_stack", [layer.identifier for layer in root_layer_stack(stage)]
+        ),
+        **bounded("layers", layers),
         "prims": prims,
         "instancing": _instancing_profile(stage, prims),
         "time": time,
+        # Findings read every layer, not the bounded slice: the layer holding the most
+        # constant-valued samples is worth naming whether or not it made the cut.
         "findings": _findings(prims, time, layers),
     }
 
