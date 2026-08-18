@@ -6,6 +6,7 @@ here so both explainer modules convert at the same boundary rather than each
 growing its own.
 """
 
+import json
 import os
 from collections import OrderedDict
 
@@ -186,19 +187,35 @@ def plain(value):
 
 
 # A result that does not fit in the caller's context window is not a smaller answer, it
-# is no answer: an agent that receives 397,000 tokens of changed attributes loses the
-# conversation the question was asked in. Measured on a 200-layer, 10,000-prim stage,
-# `diff_stages` returned 1.59 MB and `profile_stage` 78 KB, and production robotics and
-# geospatial scenes are larger again.
+# is no answer: an agent that receives four hundred thousand tokens of changed
+# attributes loses the conversation the question was asked in.
 #
-# Fifty holds every bounded result under about 25 KB. It is deliberately one number
-# rather than one per field: a caller reasoning about what it did not see should not
-# have to remember which list stops where.
-MAX_ITEMS = 50
+# Lists are bounded by size rather than by entry count, because entries are not the same
+# size. A layer identifier costs about 135 bytes; a profiled layer about 248; an authored
+# opinion about 304. One entry count lands those at wildly different costs, so it is
+# either too tight for the cheap fields or too loose for the dear ones. A byte budget
+# lands every field at the same price and needs no per-field table to keep it there.
+#
+# Twenty-five kilobytes is roughly six thousand tokens — a readable fraction of a context
+# window rather than the whole of one.
+#
+# Swept across 466 stages from the `usd-wg/assets` collection and NVIDIA's Isaac Sim
+# asset library, no result list of any kind reached this budget, or came close: the 99th
+# percentile was 2 authored opinions, 5 layers in a layer stack, 10 composition arcs, and
+# 24 materials, and the largest list found was 70 entries. The budget is a guard against
+# the stage nobody has profiled yet, not a tax on ordinary work.
+#
+# Array values are the exception, and are bounded by count. 22% of the authored arrays in
+# that sweep held more than fifty elements, the 99th percentile was 61,056, and the
+# largest was 713,718 — a single `faceVertexIndices`, megabytes of JSON on its own. Fifty
+# elements is a sample that shows the shape of the value; nobody reads the five-hundredth
+# vertex, and bulk geometry is what `usdcat` is for.
+MAX_FIELD_BYTES = 25_000
+MAX_VALUE_ITEMS = 50
 
 
-def bounded(field, items, limit=MAX_ITEMS):
-    """`{field: items}` trimmed to `limit`, saying so when the trim bit.
+def bounded(field, items, budget=None):
+    """`{field: items}` trimmed to `budget` bytes, saying so when the trim bit.
 
     Truncation that does not announce itself reads as a complete answer, so a trimmed
     list is always accompanied by `<field>_truncated`, giving how many were reported and
@@ -206,12 +223,25 @@ def bounded(field, items, limit=MAX_ITEMS):
     the signal. Splat the result into the dict being built:
 
         return {"stage": stage_path, **bounded("layers", layers)}
+
+    Measuring costs one `json.dumps` per entry reported, not per entry held: the walk
+    stops at the budget, so a ten-thousand-entry list is priced a few hundred entries
+    deep and no further. One entry is always reported, however large it is — a field
+    that answered with nothing would say less than a field that answered with too much.
     """
-    if len(items) <= limit:
+    budget = MAX_FIELD_BYTES if budget is None else budget
+    kept = spent = 0
+    for item in items:
+        spent += len(json.dumps(item, default=str)) + 1
+        if spent > budget and kept:
+            break
+        kept += 1
+
+    if kept >= len(items):
         return {field: items}
     return {
-        field: items[:limit],
-        f"{field}_truncated": {"reported": limit, "total": len(items)},
+        field: items[:kept],
+        f"{field}_truncated": {"reported": kept, "total": len(items)},
     }
 
 
@@ -228,10 +258,10 @@ def bounded_value(value):
     and a comparison against a truncated array would report two different meshes as
     identical — a confident wrong answer, which costs more than a large one.
     """
-    if isinstance(value, list) and len(value) > MAX_ITEMS:
+    if isinstance(value, list) and len(value) > MAX_VALUE_ITEMS:
         return {
-            "elements": value[:MAX_ITEMS],
-            "elements_truncated": {"reported": MAX_ITEMS, "total": len(value)},
+            "elements": value[:MAX_VALUE_ITEMS],
+            "elements_truncated": {"reported": MAX_VALUE_ITEMS, "total": len(value)},
         }
     return value
 
@@ -248,6 +278,6 @@ def value_brief(value):
     """
     if isinstance(value, dict) and "elements_truncated" in value:
         return f"an array of {value['elements_truncated']['total']} values"
-    if isinstance(value, list) and len(value) > MAX_ITEMS:
+    if isinstance(value, list) and len(value) > MAX_VALUE_ITEMS:
         return f"an array of {len(value)} values"
     return repr(value)

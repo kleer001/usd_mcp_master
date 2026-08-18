@@ -428,19 +428,39 @@ process; a CLI invocation opens one stage and exits.
 
 ## Result bounds
 
-The result lists that grow with the size of a stage are trimmed to 50 entries. A result
-that does not fit in the caller's context window is not a smaller answer, it is no
-answer: measured on a 200-layer, 10,000-prim stage before the bound existed,
-`diff_stages` returned 1.59 MB and `profile_stage` 78 KB. Production robotics and
-geospatial scenes are larger again. With every list bounded, those two results are
-8.4 KB and 19.9 KB.
+The result lists that grow with the size of a stage are trimmed to a **25 KB budget per
+field** — roughly six thousand tokens. A result that does not fit in the caller's context
+window is not a smaller answer, it is no answer: measured on a 200-layer, 10,000-prim
+stage before the bound existed, `diff_stages` returned 1.59 MB and `profile_stage` 78 KB.
+
+The budget is in bytes rather than entries because entries are not the same size.
+Measured entries: a layer-stack identifier came to roughly 135 bytes and a profiled layer
+250 on a 200-layer synthetic stage, an authored opinion 300, and a material report 913 on
+`DrawModes.usd` from `usd-wg/assets`. Exact figures move with path length and scene
+content, but the spread does not — the dearest entry costs about seven times the cheapest.
+A single entry count lands those at costs differing sevenfold, so it is either too tight
+for the cheap fields or too loose for the dear ones. A byte budget lands every field at
+the same price and needs no per-field table to keep it there. How many entries that buys
+is reported rather than assumed.
+
+**It is set to clear real work by a wide margin.** Swept across stages from the
+`usd-wg/assets` collection and NVIDIA's Isaac Sim asset library, the distributions sit far
+below it: the 99th percentile was 2 authored opinions, 5 layers in a layer stack, 10
+composition arcs, and 24 materials, and the largest list of any kind was 70 entries.
+
+Run over 464 of those stages, `profile_stage` truncated none and `check_portability`
+truncated two — the material-heaviest assets in the collection. On `DrawModes.usd`, 27 of
+its 70 materials fit the budget, because a material report is the dearest entry the tools
+produce. So the budget is not unreachable, and it is not meant to be: it is the point
+where an answer stops being worth its cost. It clears ordinary composition questions
+entirely, and bites only where a result was going to be large whatever the limit.
 
 The trim is never silent. A list that was trimmed is accompanied by a sibling field
 naming what was left out:
 
 ```json
-"attributes_changed": [ ... 50 entries ... ],
-"attributes_changed_truncated": { "reported": 50, "total": 10000 }
+"attributes_changed": [ ... 161 entries ... ],
+"attributes_changed_truncated": { "reported": 161, "total": 10000 }
 ```
 
 That key is absent when nothing was dropped, so its presence is the signal. Bounded
@@ -462,9 +482,16 @@ the trim would be the confident wrong answer this server exists to avoid.
 
 **Values as well as lists.** An array is the one value type with no upper size — a
 mesh's `points` is a single attribute and megabytes of JSON — so every field carrying an
-authored value is bounded too: `resolved_value`, an opinion's `value`,
-`current_resolved_value`, `value_that_would_survive`, `diff_stages`' `value_a` and
-`value_b`, and the write path's `change.from`, `change.to`, and `resolved_value_after`.
+authored value is bounded too, at **50 elements**: `resolved_value`, an opinion's `value`,
+`current_resolved_value`, `value_that_would_survive`, `outranked_by.value`, `diff_stages`'
+`value_a` and `value_b`, and the write path's `change.from`, `change.to`, and
+`resolved_value_after`.
+
+Arrays are bounded by count rather than by budget because the bound means something
+different there. In that same sweep, 22% of authored arrays held more than fifty
+elements, the 99th percentile was 61,056, and the largest was 713,718 — one
+`faceVertexIndices`. Fifty elements is a sample that shows the shape of the value; nobody
+reads the five-hundredth vertex, and bulk geometry is what `usdcat` is for.
 
 A trimmed array becomes a dict rather than a shorter list, because a shorter list reads
 as the whole value and nothing in it says otherwise:

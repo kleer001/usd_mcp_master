@@ -88,7 +88,9 @@ pushing:
   rather than disabled inside them, and `test_safety_contract.py` pins both sets and
   asserts they are the same three.
 - **Result lists are bounded, and no trim is silent.** `common.bounded()` trims to
-  `MAX_ITEMS` and attaches `<field>_truncated` with the reported and total counts.
+  `MAX_FIELD_BYTES` — a byte budget, not an entry count, because entries differ in size
+  by more than twice — and attaches `<field>_truncated` with the reported and total
+  counts.
   Aggregates — `counts`, `summary`, `findings` — read everything the tool examined, not
   the slice it reported. Order a list before bounding it so the cut drops the least
   important end. A new list-returning field goes through `bounded`, and a new field

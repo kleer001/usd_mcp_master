@@ -313,11 +313,11 @@ context nobody verified.
 
 The result lists that grow with the size of a stage — changed attributes, prims added,
 removed and retyped, layers, layer stacks, opinions, composition arcs, materials, and
-shaders — are trimmed to 50 entries, and say so when they are:
+shaders — are trimmed to a 25 KB budget per field, and say so when they are:
 
 ```json
-"attributes_changed": [ ... 50 entries ... ],
-"attributes_changed_truncated": { "reported": 50, "total": 10000 }
+"attributes_changed": [ ... 161 entries ... ],
+"attributes_changed_truncated": { "reported": 161, "total": 10000 }
 ```
 
 Without that, a diff of two 10,000-prim stages returns about 1.6 MB — on the order of
@@ -326,9 +326,16 @@ summaries, and findings are computed over everything regardless, and lists with 
 meaningful order are sorted before they are trimmed, so what survives is the strongest
 opinion, the costliest layer, the material least likely to render.
 
-An attribute's own value is bounded on the same terms, because a mesh's `points` is a
-single attribute and megabytes of JSON. A trimmed array comes back as a dict rather than
-a shorter list, so it cannot be mistaken for the whole value:
+The budget is set high enough that ordinary work rarely meets it. Across 464 stages
+from `usd-wg/assets` and NVIDIA's Isaac Sim library, `profile_stage` truncated nothing at
+all and `check_portability` truncated two — the material-heaviest stages in the
+collection, at 70 materials. Everything else came back whole.
+
+An attribute's own value is bounded too, at 50 elements — a mesh's `points` is a single
+attribute and megabytes of JSON, and 22% of the arrays in that sweep ran past fifty, the
+largest to 713,718. Fifty is a sample that shows the shape of the value; for the bulk
+geometry itself, use `usdcat`. A trimmed array comes back as a dict rather than a shorter
+list, so it cannot be mistaken for the whole value:
 
 ```json
 "resolved_value": { "elements": [ ... 50 ... ],

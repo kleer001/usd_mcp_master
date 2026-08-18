@@ -466,7 +466,7 @@ def wide(tmp_path):
     """A stage pair that overruns the result bound in every list the bound applies to.
 
     Sixty sublayers per stage, so the layer stack and the per-layer profile both exceed
-    `MAX_ITEMS`; one attribute carrying an opinion in every one of them, so the property
+    the budget; one attribute carrying an opinion in every one of them, so the property
     stack does too; sixty materials, so the portability report does; and a second stage
     that changes, adds, removes, and retypes a prim per layer, so no list in a diff is
     short enough to escape the bound.
