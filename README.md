@@ -24,7 +24,7 @@ read-only unless you start it with `--enable-write`.
 | "I set it and nothing changed" | `value` — every file with an opinion, strongest first, and what each says |
 | "Where do I put this so it sticks?" | `edit-target` — whether an edit in a given file would win, and what would beat it |
 | "It's not there / I can't see it" | `why-not-visible` — missing, switched off, not loaded, hidden, or excluded from the render |
-| "I can't select or override it" | `prim` — how it was built, and whether it is an instance, which cannot hold an edit |
+| "I can't select or override it" | `prim` — how it was built, and whether its children are instance proxies, which cannot hold an edit |
 | "It's showing the wrong version" | `variants` — which variant is selected and which file selected it |
 | "Works on my machine" | `resolve` — which file that asset path actually names, from here |
 | "Nothing changed but the whole file diffs" | `diff` — real edits separated from a re-export's float noise |
@@ -45,8 +45,8 @@ to investigate is to set `TF_DEBUG=PCP_PRIM_INDEX` and read log spew, or to open
 The answer is mechanically available — `UsdAttribute.GetPropertyStack()` returns every
 authored opinion in strength order, `UsdGeomImageable` computes visibility and purpose,
 and `PrimCompositionQuery` with a resolve target says whether a given file is strong
-enough to matter. It is just tedious to assemble by hand, and nothing assembles it for
-you. That is exactly the shape of work worth handing to a tool.
+enough to matter. It is just tedious to assemble by hand, and nothing in USD assembles
+it for you. That is exactly the shape of work worth handing to a tool.
 
 ## Install
 
@@ -83,8 +83,8 @@ still the default until you pass `--confirm`. The full command table is in
 
 ### `explain_value(stage_path, prim_path, attribute_name, time_code=None)`
 
-Every authored opinion for the attribute, strongest first, each with its layer, its
-own value, and whether it wins. A losing override reads directly against the opinion
+The authored opinions for the attribute, strongest first, each with its layer, its
+own value, and whether it wins — up to the result bound below. A losing override reads directly against the opinion
 that beat it.
 
 ```jsonc
@@ -110,9 +110,10 @@ null resolved path is how a broken texture or reference presents:
 
 ### `why_not_visible(stage_path, prim_path)`
 
-Covers the four ways a prim disappears without raising an error: it never composed, an
-ancestor is deactivated, `visibility` is authored `invisible` somewhere up the chain, or
-`purpose` excludes it from a default render. Each reason names the prim and the layer
+Covers the six ways a prim disappears without raising an error: it never composed, an
+ancestor is deactivated, a payload holding it was never loaded, it is not an Imageable,
+`visibility` is authored `invisible` somewhere up the chain, or `purpose` excludes it
+from a default render. Each reason names the prim and the layer
 responsible.
 
 ```jsonc
@@ -310,19 +311,25 @@ context nobody verified.
 
 ## Result bounds
 
-Every list a stage can make arbitrarily long — changed attributes, layers, opinions,
-materials — is trimmed to 50 entries, and says so when it does:
+The result lists that grow with the size of a stage — changed attributes, prims added,
+removed and retyped, layers, layer stacks, opinions, composition arcs, materials, and
+shaders — are trimmed to 50 entries, and say so when they are:
 
 ```json
 "attributes_changed": [ ... 50 entries ... ],
 "attributes_changed_truncated": { "reported": 50, "total": 10000 }
 ```
 
-Without it, a diff of two 10,000-prim stages returns about 397,000 tokens and takes the
-agent asking the question down with it. Counts, summaries, and findings are computed
-over everything regardless, and lists with a meaningful order are sorted before they are
-trimmed, so what survives is the strongest opinion, the costliest layer, the material
-least likely to render. Details in `SPEC.md`.
+Without that, a diff of two 10,000-prim stages returns about 1.6 MB — on the order of
+400,000 tokens — and takes the agent asking the question down with it. Counts,
+summaries, and findings are computed over everything regardless, and lists with a
+meaningful order are sorted before they are trimmed, so what survives is the strongest
+opinion, the costliest layer, the material least likely to render.
+
+Two things are **not** bounded, and a large enough stage still overruns a context window
+through either: an attribute's own value, so `explain_value` on a 50,000-point mesh's
+`points` returns megabytes, and the variant lists from `explain_variants`. The full list
+of bounded fields is in [SPEC.md](SPEC.md#result-bounds).
 
 ## Resources and prompts
 
@@ -360,7 +367,8 @@ nothing until `confirm=true`:
 }
 ```
 
-The dry run is what the tool does by default, so it is not a step an agent can skip.
+The dry run is what the tool does by default, so an agent gets it unless it deliberately
+passes `confirm=true` on the first call.
 An edit into a layer that something stronger overrides is applied where you asked and
 reported as not having moved the resolved value — correcting an asset a shot overrides
 is a real thing to want, and the tool says plainly what did and did not change.
@@ -370,10 +378,11 @@ Every applied mutation is appended to `~/.usd-mcp/audit.log` as JSON lines, or w
 
 ## Safety
 
-Every tool is annotated `readOnlyHint`, and the posture behind that is in
+Every tool on the default server is annotated `readOnlyHint`, and the posture behind
+that is in
 [SPEC.md](SPEC.md): local-only, no network egress, no self-update, no write path unless
-you ask for one, no runtime plugin loading, `pip` install only, pinned to a released
-`usd-core`. A facility can read the whole server in one sitting — and authoring is
+you ask for one, no runtime plugin loading, `pip` install only, and dependencies that
+are released PyPI packages rather than forks or git refs. A facility can read the whole server in one sitting — and authoring is
 confined to a single file, `usd_mcp/write.py`, so "what can change my stage" has a
 one-file answer.
 
@@ -402,9 +411,9 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The tests build real stages — a shot layer sublayering an asset layer, and a second one
-exercising references, payloads, variants, and instancing — and assert against real
-composition, not mocks.
+The tests build real stages — a shot layer sublayering an asset layer, and others
+exercising references, payloads, variants, instancing, shading, and a stage wide enough
+to overrun the result bound — and assert against real composition, not mocks.
 
 ```
 ruff check usd_mcp/ tests/

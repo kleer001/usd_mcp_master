@@ -61,9 +61,9 @@ def why_not_visible(stage_path, prim_path, load_payloads=True):
     """Diagnose an absent or unrendered prim.
 
     Covers the ways a prim disappears without an error: it was never composed, an
-    ancestor is deactivated, a payload holding it was never loaded, visibility is
-    authored `invisible` somewhere up the chain, or its purpose excludes it from a
-    default render.
+    ancestor is deactivated, a payload holding it was never loaded, it is not an
+    Imageable, visibility is authored `invisible` somewhere up the chain, or its purpose
+    excludes it from a default render.
 
     `load_payloads` must match the session being asked about. Answering with payloads
     loaded about a session that deferred them reports a prim as visible while the

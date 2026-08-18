@@ -428,11 +428,12 @@ process; a CLI invocation opens one stage and exits.
 
 ## Result bounds
 
-Every list a stage can make arbitrarily long is trimmed to 50 entries. A result that
-does not fit in the caller's context window is not a smaller answer, it is no answer:
-measured on a 200-layer, 10,000-prim stage before the bound existed, `diff_stages`
-returned 1.59 MB — about 397,000 tokens — and `profile_stage` 78 KB. Production robotics
-and geospatial scenes are larger again. The bound holds every result under about 25 KB.
+The result lists that grow with the size of a stage are trimmed to 50 entries. A result
+that does not fit in the caller's context window is not a smaller answer, it is no
+answer: measured on a 200-layer, 10,000-prim stage before the bound existed,
+`diff_stages` returned 1.59 MB and `profile_stage` 78 KB. Production robotics and
+geospatial scenes are larger again. With every list bounded, those two results are
+8.4 KB and 19.9 KB.
 
 The trim is never silent. A list that was trimmed is accompanied by a sibling field
 naming what was left out:
@@ -451,6 +452,19 @@ Aggregates are never bounded. `diff_stages.counts`, `profile_stage.time`,
 `check_portability.summary`, and every `findings` list are computed over everything the
 tool examined, not over the slice it reported — a count that counted only what survived
 the trim would be the confident wrong answer this server exists to avoid.
+
+**What is not bounded.** Two paths can still return a result larger than a context
+window, and neither is covered by the field list above:
+
+- **An attribute's own value.** `plain()` converts a `VtArray` entry for entry, so
+  `explain_value` on a 50,000-point mesh's `points` returns about 2.8 MB. Every field
+  carrying an authored value is affected — `resolved_value`, an opinion's `value`, and
+  `diff_stages`' `value_a` and `value_b`.
+- **`explain_variants`.** Its `variant_sets`, each set's `variants`, and `selected_in`
+  are returned whole.
+
+Both are stated here rather than fixed quietly: a caller sizing its own budget needs to
+know where the guarantee stops.
 
 Where a list has a meaningful order, it is sorted before it is trimmed, so the bound
 drops the least important end: opinions and composition arcs strongest first, profiled

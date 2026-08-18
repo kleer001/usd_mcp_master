@@ -87,12 +87,13 @@ pushing:
   adds exactly three to either. The write path is absent from the tool and command lists
   rather than disabled inside them, and `test_safety_contract.py` pins both sets and
   asserts they are the same three.
-- **Every result list is bounded, and no trim is silent.** `common.bounded()` trims to
+- **Result lists are bounded, and no trim is silent.** `common.bounded()` trims to
   `MAX_ITEMS` and attaches `<field>_truncated` with the reported and total counts.
   Aggregates — `counts`, `summary`, `findings` — read everything the tool examined, not
   the slice it reported. Order a list before bounding it so the cut drops the least
   important end. A new list-returning field goes through `bounded` or it can take an
-  agent's context window down.
+  agent's context window down. Two paths are still unbounded and `SPEC.md#result-bounds`
+  says so out loud: an attribute's own value, and `explain_variants`.
 - **The dry run is the default, not a separate tool.** Every mutating function takes
   `confirm=False` and returns the diff without writing. Do not add a mutating path that
   writes on its first call.
