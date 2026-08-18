@@ -74,11 +74,11 @@ $ usd-explain edit-target shot.usda /World/Ball radius asset.usda
 $ usd-explain diff before.usda after.usda --tolerance 1e-6
 ```
 
-`usd-explain --help` lists all nine. Results come back whole — the server's size bounds
-are for a context window, not a pipe — and `--brief` opts into them. Writing is opt-in
-here too: without `--enable-write` there is no `set-attribute` command to call, and with
-it the dry run is still the default until you pass `--confirm`. The full command table is
-in [SPEC.md](SPEC.md#command-line).
+`usd-explain --help` lists all nine. Results are bounded the way the server bounds them;
+`--full` reports every list and array value whole, for a script writing to a file rather
+than to a terminal or an agent. Writing is opt-in here too: without `--enable-write` there
+is no `set-attribute` command to call, and with it the dry run is still the default until
+you pass `--confirm`. The full command table is in [SPEC.md](SPEC.md#command-line).
 
 ## Tools
 
@@ -312,13 +312,13 @@ context nobody verified.
 
 ## Result bounds
 
-**`usd-explain` returns everything. The MCP server bounds what it returns.** A bound
-exists because a tool result is spent against a context window; stdout is spent against a
-pipe, where a large answer costs nothing and a trimmed one breaks the script reading it.
-Pass `--brief` to the CLI to see what an agent would see.
+Both front doors bound their results, and `usd-explain --full` is what turns that off.
+A shell is not reliably a pipe: the same stdout reaches a terminal and an agent's shell
+tool, and an agent driving the CLI spends the output against a context window exactly as
+an MCP client does.
 
-On the server, result lists get a 256 KB budget per field and array values 25 KB, and
-say so when either bites:
+Result lists get a 256 KB budget per field and array values 25 KB, and say so when either
+bites:
 
 ```json
 "attributes_changed": [ ... 161 entries ... ],

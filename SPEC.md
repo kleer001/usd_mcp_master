@@ -415,7 +415,7 @@ The binary name supplies the verb, so the commands drop it:
 | `usd-explain diff STAGE_A STAGE_B [--tolerance F] [--scope S]` | `diff_stages` |
 | `usd-explain profile STAGE [--no-payloads]` | `profile_stage` |
 | `usd-explain portability STAGE TARGET` | `check_portability` |
-| `usd-explain --brief <any command>` | apply the server's size bounds |
+| `usd-explain --full <any command>` | report every list and value whole |
 | `usd-explain --enable-write set-attribute STAGE PRIM ATTR VALUE LAYER [--confirm]` | `set_attribute` |
 | `usd-explain --enable-write set-visibility STAGE PRIM visible\|invisible LAYER [--confirm]` | `set_visibility` |
 | `usd-explain --enable-write set-active STAGE PRIM active\|inactive LAYER [--confirm]` | `set_active` |
@@ -424,22 +424,27 @@ The binary name supplies the verb, so the commands drop it:
 `'"red"'` is a string, `[[0, 1, 0]]` is an array of colours. A CLI that inferred the
 difference would author the wrong type and report success.
 
-Results are whole by default: `--brief` applies the size bounds the MCP server uses, for
-a caller spending the output on a context window rather than a pipe.
+Results are bounded exactly as the MCP server bounds them. `--full` reports every list
+and array value whole, for a script writing to a file rather than to a terminal or an
+agent's shell tool.
 
 There is no `--cache-stages`. The cache pays for itself across thousands of calls in one
 process; a CLI invocation opens one stage and exits.
 
 ## Result bounds
 
-**The bound is a property of the caller, not of the data.** A result that does not fit in
-the caller's context window is not a smaller answer, it is no answer — but stdout is not a
-context window. `usd-explain` calls `common.unbound_results()` at startup and returns
-everything; the MCP server does not, and bounds what it returns. A caller that wants both
-gets `--brief` on the CLI. Truncating a shell's output would break the script reading it
-for no gain, and 15 MB costs a pipe nothing.
+A result that does not fit in the caller's context window is not a smaller answer, it is
+no answer. Result lists get a **256 KB budget per field** and array values **25 KB**, on
+both front doors.
 
-On the server, result lists get a **256 KB budget per field** and array values **25 KB**.
+**Both bound by default, because a shell is not reliably a pipe.** The same stdout reaches
+a terminal, a `jq` pipeline, and an agent's shell tool, and an agent driving `usd-explain`
+spends the output against a context window exactly as an MCP client does. The failure
+modes are not symmetric: a script that forgets the flag gets a result that says
+`_truncated` and carries exact counts, while a caller that needed a bound and did not get
+one has already lost the conversation it was asking in. So the default is the safe side.
+`usd-explain --full` calls `common.unbound_results()` and reports everything whole, for
+the script that genuinely wants every element and asks once.
 
 The budget is in bytes rather than entries because entries are not the same size.
 Both are budgets in bytes rather than counts of entries, because entries are not the same
@@ -522,7 +527,7 @@ Explanations get the same treatment through `value_brief`, which names a long ar
   identical — a confident wrong answer, which costs more than a large one. Only what the
   diff *reports* is bounded.
 - **The audit log.** `write.py` records every element authored. A record of the first
-  fifty elements of an edit is not a record of that edit.
+  leading elements of an edit is not a record of that edit.
 
 Where a list has a meaningful order, it is sorted before it is trimmed, so the bound
 drops the least important end: opinions and composition arcs strongest first, profiled

@@ -13,7 +13,6 @@ import pytest
 
 from usd_mcp import common
 from usd_mcp.cli import build_parser, main
-from usd_mcp.explain import explain_value
 
 
 def run(capsys, *argv):
@@ -226,31 +225,36 @@ def test_every_command_carries_help_text():
 
 
 class TestResultBounds:
-    """The shell gets the whole answer; the context window gets a bounded one.
+    """Bounded by default on both front doors; `--full` is what turns that off.
 
-    A bound exists because an MCP tool result is spent against a context window. Stdout
-    is spent against a pipe, where a fifteen-megabyte mesh attribute costs nothing and a
-    trimmed one breaks the script reading it. So the CLI drops the bounds and the server
-    keeps them, and that difference is the whole point of having two front doors.
+    A shell is not reliably a pipe. The same stdout reaches a terminal and an agent's
+    shell tool, and an agent driving this spends the output against a context window
+    exactly as an MCP client would — so the default cannot assume the generous case.
     """
 
-    def test_the_shell_gets_the_array_whole(self, capsys, bulky):
+    def test_the_default_is_bounded(self, capsys, bulky, monkeypatch):
+        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
         result = run(capsys, "value", bulky[0], "/Mesh", "points")
+        assert result["resolved_value"]["elements_truncated"]["total"] == 200
+
+    def test_full_reports_the_array_whole(self, capsys, bulky, monkeypatch):
+        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
+        result = run(capsys, "--full", "value", bulky[0], "/Mesh", "points")
         assert isinstance(result["resolved_value"], list)
         assert len(result["resolved_value"]) == 200
 
-    def test_the_shell_gets_every_variant(self, capsys, bulky):
-        result = run(capsys, "variants", bulky[0], "/Switch")
+    def test_full_reports_every_variant(self, capsys, bulky, monkeypatch):
+        monkeypatch.setattr(common, "MAX_FIELD_BYTES", 200)
+        result = run(capsys, "--full", "variants", bulky[0], "/Switch")
         assert len(result["variant_sets"][0]["variants"]) == 60
         assert not any(k.endswith("_truncated") for k in result["variant_sets"][0])
 
-    def test_brief_opts_back_into_what_an_agent_would_see(self, capsys, bulky, monkeypatch):
-        monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
-        result = run(capsys, "--brief", "value", bulky[0], "/Mesh", "points")
-        assert result["resolved_value"]["elements_truncated"]["total"] == 200
+    def test_full_drops_the_budgets_for_the_whole_process(self, capsys, bulky, monkeypatch):
+        """It is process-wide, and safe only because a CLI run answers one command and exits.
 
-    def test_the_server_keeps_its_bounds(self, bulky, monkeypatch):
-        """The same call through the library path stays bounded — the CLI opts out, not the core."""
+        Anything that grows this module into a long-lived host — a REPL, a service, a
+        second command in one process — has to set the budgets per call instead.
+        """
         monkeypatch.setattr(common, "MAX_VALUE_BYTES", 100)
-        result = explain_value(bulky[0], "/Mesh", "points")
-        assert "elements_truncated" in result["resolved_value"]
+        run(capsys, "--full", "value", bulky[0], "/Mesh", "points")
+        assert common.MAX_VALUE_BYTES is None

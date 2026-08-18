@@ -16,11 +16,14 @@ three mutating commands are not registered, so `usd-explain set-attribute` is an
 unrecognised command rather than a refused one. The dry run stays the default —
 `--confirm` is what writes.
 
-Results are whole by default, which is where this differs from the server. The result
-bounds exist because an MCP tool result is spent against a context window; stdout is
-spent against a pipe, where a fifteen-megabyte mesh attribute costs nothing and trimming
-it breaks the script reading it. `--brief` opts back in for a caller that wants what an
-agent would see.
+Results are bounded by default, on the same budgets the server uses, and `--full` turns
+that off. Stdout reaches a pipe, a terminal, and an agent's shell tool alike, and two of
+those three are hurt by a fifteen-megabyte mesh attribute — an agent driving this through
+a shell is spending it against a context window exactly as an MCP client would. The
+failure modes are not symmetric either: a script that forgets `--full` gets a result that
+says `_truncated` and carries exact counts, while an agent that needed a bound and did not
+get one has already lost the conversation. So the safe side is the default, and the caller
+that genuinely wants every element of a mesh asks for it once.
 
 This module parses arguments and prints results. It holds no USD logic.
 """
@@ -270,12 +273,13 @@ def build_parser(enable_write=False):
         ),
     )
     parser.add_argument(
-        "--brief",
+        "--full",
         action="store_true",
         help=(
-            "trim long lists and large array values the way the MCP server does, for a "
-            "caller spending the output on a context window rather than a pipe. Off by "
-            "default: a shell wants the whole answer, and a trimmed one breaks a script."
+            "report every list and array value whole, however large. Off by default: one "
+            "mesh attribute in a published sample asset is 15 MB, which a pipe absorbs "
+            "and a terminal or an agent's context window does not. Bounded results say "
+            "so, and their counts are exact either way."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
@@ -297,7 +301,7 @@ def main(argv=None):
     gate, _ = _GATE.parse_known_args(argv)
 
     args = build_parser(enable_write=gate.enable_write).parse_args(argv)
-    if not args.brief:
+    if args.full:
         common.unbound_results()
     try:
         result = args.run(args)

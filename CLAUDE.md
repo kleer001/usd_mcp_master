@@ -91,11 +91,12 @@ pushing:
   `MAX_FIELD_BYTES`, and `bounded_value()` to `MAX_VALUE_BYTES` — byte budgets, not entry
   counts, because entry costs differ nearly sevenfold — attaching `<field>_truncated` with
   the reported and total counts.
-- **The bound belongs to the caller, not the data.** `usd-explain` calls
-  `common.unbound_results()` and returns everything; the MCP server keeps its budgets. A
-  tool result is spent against a context window, stdout against a pipe. Measured on real
+- **Both front doors bound by default; `usd-explain --full` opts out.** A shell is not
+  reliably a pipe — an agent driving the CLI spends stdout against a context window just
+  as an MCP client does — and the failure modes are lopsided: a truncated result announces
+  itself and keeps exact counts, an unbounded one ends the conversation. Measured on real
   assets: result lists never exceed 65 KB unbounded, while one `points` attribute in
-  `usd-wg/assets` is 15.1 MB — which is why the two budgets are an order apart.
+  `usd-wg/assets` is 15.1 MB, which is why the two budgets are an order apart.
   Aggregates — `counts`, `summary`, `findings` — read everything the tool examined, not
   the slice it reported. Order a list before bounding it so the cut drops the least
   important end. A new list-returning field goes through `bounded`, and a new field
@@ -104,7 +105,7 @@ pushing:
 - **Bound what you report, never what you compare.** `plain()` stays exact. `diff_stages`
   compares its output element by element, so trimming before the comparison would call
   two different meshes identical. The write path's audit log is exact for the same
-  reason: a record of the first fifty elements is not a record. Use `value_brief` for a
+  reason: a record of the leading elements is not a record. Use `value_brief` for a
   value going into an explanation string.
 - **The dry run is the default, not a separate tool.** Every mutating function takes
   `confirm=False` and returns the diff without writing. Do not add a mutating path that

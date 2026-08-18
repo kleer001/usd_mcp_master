@@ -213,11 +213,11 @@ def plain(value):
 # attribute passes whole — the 90th-percentile array in that sweep was 750 elements, about
 # 17 KB — and only the outliers are sampled. Bulk geometry is what `usdcat` is for.
 #
-# None of which applies to a shell. A budget exists because a tool result is spent against
-# a context window; a result piped to `jq` or redirected to a file is spent against a disk,
-# and 15 MB there costs nothing and truncating it breaks the script. So the budgets are a
-# property of the caller, not of the data: the MCP server keeps them and `usd-explain`
-# drops them, each saying so in its own `--help`.
+# Both front doors bound by default, because a shell is not reliably a pipe: the same
+# stdout reaches a terminal and an agent's shell tool, and an agent driving `usd-explain`
+# spends the output against a context window exactly as an MCP client does. `--full` turns
+# the budgets off for the caller that genuinely wants every element — a script writing to
+# a file, which asks once and deliberately.
 MAX_FIELD_BYTES = 256_000
 MAX_VALUE_BYTES = 25_000
 
@@ -226,8 +226,8 @@ def unbound_results():
     """Report every list and value whole, however large. Bounded until called.
 
     For a caller whose output goes to a pipe or a file rather than into a context window.
-    `usd-explain` calls this at startup; the MCP server does not, because a tool result
-    that overruns the window it lands in is not a smaller answer, it is no answer.
+    `usd-explain --full` calls this at startup; nothing else does, because a result that
+    overruns the window it lands in is not a smaller answer, it is no answer.
     """
     global MAX_FIELD_BYTES, MAX_VALUE_BYTES
     MAX_FIELD_BYTES = MAX_VALUE_BYTES = None

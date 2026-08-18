@@ -163,7 +163,7 @@ def _applied(plan, stage_path, prim, layer, name, prior, after):
     """The applied result, and the audit entry that must survive it.
 
     The result is bounded; the audit log is not. A record of what was authored is worth
-    nothing if it records only the first fifty elements of what was authored.
+    nothing if it records only the leading elements of what was authored.
     """
     plan = dict(plan)
     plan["applied"] = True

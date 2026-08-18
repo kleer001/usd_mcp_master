@@ -7,7 +7,7 @@ conversation the question was asked in.
 
 So every list a stage can make arbitrarily long is trimmed. The trim is the easy half.
 The half worth testing is that a trimmed list always says it was trimmed, and that the
-aggregate counts beside it still count everything: a bound that quietly reports fifty of
+aggregate counts beside it still count everything: a bound that quietly reports a slice of
 ten thousand is a confident wrong answer, which is exactly what this package refuses to
 give anywhere else.
 """
@@ -217,7 +217,7 @@ class TestBoundedValue:
         assert bounded_value("inherited") == "inherited"
 
     def test_an_ordinary_mesh_attribute_passes_through_whole(self):
-        """The 90th-percentile array in the sweep was 750 elements, about 19 KB."""
+        """The 90th-percentile array in the sweep was 750 elements, about 17 KB."""
         items = [[float(i), float(i), float(i)] for i in range(750)]
         assert bounded_value(items) == items
 
