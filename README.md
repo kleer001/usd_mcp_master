@@ -1,15 +1,39 @@
 # usd-mcp
 
-An MCP server that answers the USD questions nobody's tooling answers: **why does this
-attribute have this value**, **why can't I see this prim**, **how was this prim composed**,
-**which variant am I getting**, **if I edit this layer will it even win**, **which file
-does this asset path actually name**, **what actually changed between these two
-stages**, **why is this stage so expensive**, and **will anyone else's renderer read this
-shading**. It can author too, if you ask it to.
+**I deleted it and it's still there. I changed the value and nothing happened. It's
+invisible and I don't know why. It renders grey in the other renderer. It works on my
+machine.**
 
-It is local-only and has no network path. It is read-only by default: the write path
-is absent unless you start it with `--enable-write`. It runs as an MCP server
-(`usd-mcp`) or as a command-line tool (`usd-explain`), over the same code.
+Every one of those is a USD composition failure, and every one of them is silent. USD
+does not error when your edit loses to a stronger opinion — it accepts the edit, writes
+it exactly where you asked, and resolves to something else. The scene is not broken and
+your file is not wrong; some other file you may never have opened is winning.
+
+This tool tells you which one, and why. It reads local stages and answers in plain
+terms: which file supplied the value you are seeing, what your edit lost to, where an
+edit would have to go to win instead. It can author the fix too, if you ask it to.
+
+Run it as an MCP server (`usd-mcp`) so an agent can ask, or as a command line
+(`usd-explain`) so you can. Same answers, same code. Local-only, no network path, and
+read-only unless you start it with `--enable-write`.
+
+## What you're seeing, and what to ask
+
+| Symptom | Ask |
+| --- | --- |
+| "I set it and nothing changed" | `value` — every file with an opinion, strongest first, and what each says |
+| "Where do I put this so it sticks?" | `edit-target` — whether an edit in a given file would win, and what would beat it |
+| "It's not there / I can't see it" | `why-not-visible` — missing, switched off, not loaded, hidden, or excluded from the render |
+| "I can't select or override it" | `prim` — how it was built, and whether it is an instance, which cannot hold an edit |
+| "It's showing the wrong version" | `variants` — which variant is selected and which file selected it |
+| "Works on my machine" | `resolve` — which file that asset path actually names, from here |
+| "Nothing changed but the whole file diffs" | `diff` — real edits separated from a re-export's float noise |
+| "It takes forever to open" | `profile` — where the cost is: files, deferred loads, instancing, animation |
+| "It's grey/black in their renderer" | `portability` — whether the destination can read this shading at all |
+
+Those are the command-line names — `usd-explain value shot.usda /World/Ball radius`. The
+MCP tools are the same nine under longer names; [Tools](#tools) below describes each in
+full, and [SPEC.md](SPEC.md#command-line) maps the two.
 
 ## Why
 
@@ -19,9 +43,10 @@ to investigate is to set `TF_DEBUG=PCP_PRIM_INDEX` and read log spew, or to open
 `usdview` already knowing where to look and what LIVRPS strength ordering implies.
 
 The answer is mechanically available — `UsdAttribute.GetPropertyStack()` returns every
-authored opinion in strength order, and `UsdGeomImageable` computes visibility and
-purpose — it is just tedious to assemble by hand. That is exactly the shape of work
-worth handing to a tool.
+authored opinion in strength order, `UsdGeomImageable` computes visibility and purpose,
+and `PrimCompositionQuery` with a resolve target says whether a given file is strong
+enough to matter. It is just tedious to assemble by hand, and nothing assembles it for
+you. That is exactly the shape of work worth handing to a tool.
 
 ## Install
 
