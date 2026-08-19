@@ -16,7 +16,12 @@ profiles the stage as a session that deferred them sees it.
 
 from pxr import Usd
 
-from usd_mcp.common import bounded, open_stage, prim_specs, root_layer_stack
+from usd_mcp.common import (
+    bounded,
+    layer_identifiers,
+    open_stage,
+    prim_specs,
+)
 
 # The default predicate also demands `PrimIsLoaded`, which hides the very prims a
 # payload profile is about: an unloaded payload's own prim, not just its contents.
@@ -54,7 +59,7 @@ def profile_stage(stage_path, load_payloads=True):
         "stage": stage_path,
         "payloads_loaded": load_payloads,
         **bounded(
-            "root_layer_stack", [layer.identifier for layer in root_layer_stack(stage)]
+            "root_layer_stack", layer_identifiers(stage)
         ),
         **bounded("layers", layers),
         "prims": prims,

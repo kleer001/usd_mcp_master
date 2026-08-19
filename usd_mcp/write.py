@@ -24,6 +24,7 @@ from pathlib import Path
 from pxr import Tf, Usd, UsdGeom
 
 from usd_mcp.common import (
+    bounded_plain,
     bounded_value,
     open_stage,
     plain,
@@ -140,7 +141,7 @@ def _plan(kind, name, prior, new, layer, verdict, confirm):
             "kind": kind,
             "name": name,
             "from": bounded_value(prior),
-            "to": bounded_value(plain(new)),
+            "to": bounded_plain(new),
         },
         "would_win": verdict["would_win"],
         "blocked_by": verdict["blocked_by"],
@@ -202,7 +203,7 @@ def _metadata_verdict(stage, prim, layer, field):
             continue
         blocker = {
             "layer": spec.layer.identifier,
-            "value": bounded_value(plain(spec.GetInfo(field))),
+            "value": bounded_plain(spec.GetInfo(field)),
         }
         break
 

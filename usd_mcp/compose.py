@@ -13,9 +13,9 @@ from pxr import Usd
 
 from usd_mcp.common import (
     bounded,
-    bounded_value,
+    bounded_plain,
+    layer_identifiers,
     open_stage,
-    plain,
     require_attribute,
     require_prim,
     root_layer_stack,
@@ -62,7 +62,7 @@ def explain_prim(stage_path, prim_path):
         "specifier": str(prim.GetSpecifier()),
         **bounded("composition_arcs", arcs),
         "instancing": _instancing(prim),
-        **bounded("layer_stack", [layer.identifier for layer in root_layer_stack(stage)]),
+        **bounded("layer_stack", layer_identifiers(stage)),
     }
 
 
@@ -110,9 +110,9 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "target_layer": layer.identifier,
-        "current_resolved_value": bounded_value(plain(attr.Get())),
+        "current_resolved_value": bounded_plain(attr.Get()),
         **bounded(
-            "layer_stack", [candidate.identifier for candidate in root_layer_stack(stage)]
+            "layer_stack", layer_identifiers(stage)
         ),
         **edit_target_verdict(prim, attr, layer),
     }
@@ -158,7 +158,7 @@ def edit_target_verdict(prim, attr, layer):
         winner = opinions[0]
         blocker = {
             "layer": winner.layer.identifier,
-            "value": bounded_value(plain(winner.default)) if winner.HasInfo("default") else None,
+            "value": bounded_plain(winner.default) if winner.HasInfo("default") else None,
         }
 
     # would_win answers "would an edit here take effect", which needs both a layer that
@@ -173,7 +173,7 @@ def edit_target_verdict(prim, attr, layer):
         "blocked_by": blocked_by,
         "target_writable": writable,
         "outranked_by": blocker if blocked_by == "strength" else None,
-        "value_that_would_survive": bounded_value(plain(stronger.Get())) if outranked else None,
+        "value_that_would_survive": bounded_plain(stronger.Get()) if outranked else None,
         "explanation": _edit_target_explanation(layer, blocked_by, blocker),
     }
 

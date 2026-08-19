@@ -356,3 +356,52 @@ class TestTheListLimitDoesNotReachRealWork:
         assert self._untruncated(profile_stage(wide[0])) == []
         assert self._untruncated(check_portability(wide[0], "preview")) == []
         assert self._untruncated(explain_value(wide[0], "/World/Contested", "size")) == []
+
+
+def test_bounded_plain_matches_converting_then_bounding():
+    """`bounded_plain` is `bounded_value(plain(...))` without the discarded conversions.
+
+    The point of the helper is that it never builds the elements the budget drops —
+    a 713,718-element `points` array cost 11.3 s to convert and 25.8 ms to sample. It
+    is only worth having if what it reports is identical, so this pins the equivalence
+    across every shape `plain` dispatches on rather than only the array it optimises.
+    """
+    from pxr import Gf, Sdf, Vt
+
+    from usd_mcp.common import bounded_plain, plain
+
+    cases = [
+        None,
+        5.0,
+        "hello",
+        Sdf.AssetPath("./tex/diffuse.exr"),
+        Gf.Vec3f(1, 2, 3),
+        Vt.Vec3fArray([]),
+        Vt.Vec3fArray([Gf.Vec3f(i, 0, 1.5) for i in range(50)]),
+        Vt.Vec3fArray([Gf.Vec3f(i, 0, 1.5) for i in range(40_000)]),
+        Vt.TokenArray(["a"] * 40_000),
+    ]
+    for raw in cases:
+        assert bounded_plain(raw) == bounded_value(plain(raw))
+
+
+def test_bounded_plain_converts_only_what_it_reports():
+    """The saving is the whole reason the helper exists, so it is pinned, not assumed."""
+    from pxr import Vt
+
+    from usd_mcp.common import bounded_plain
+
+    converted = []
+
+    class Counted(float):
+        def __repr__(self):
+            converted.append(1)
+            return float.__repr__(self)
+
+    big = Vt.DoubleArray([float(i) for i in range(200_000)])
+    result = bounded_plain(big)
+
+    reported = result["elements_truncated"]["reported"]
+    assert result["elements_truncated"]["total"] == 200_000
+    # One json.dumps per element reported, not per element held.
+    assert reported < 200_000 / 10

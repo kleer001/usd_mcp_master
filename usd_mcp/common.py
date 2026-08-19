@@ -72,6 +72,13 @@ def open_stage(stage_path, load_payloads=True, cached=True):
         # USD will not re-read a layer that is still in memory, and a cached stage is
         # what keeps it there. Dropping every cached stage — not just this one, since
         # stages share layers — is what lets the recomposed stage read the new file.
+        #
+        # `del entry` is not tidying and not a no-op: `entry` still holds the stale stage,
+        # and `_compose` runs below while this frame is live. Clearing the dict alone
+        # leaves that last reference holding the old layers in USD's registry, and the
+        # recomposed stage reads the scene description that was already in memory —
+        # silently, with the pre-edit value and no error.
+        # `test_a_recomposed_stage_reads_the_edited_file` fails if this line goes.
         del entry
         _stage_cache.clear()
 
@@ -167,6 +174,16 @@ def root_layer_stack(stage):
     return stage.GetLayerStack(includeSessionLayers=False)
 
 
+def _is_array(value):
+    """Whether `plain` expands this value element by element.
+
+    Shared with `bounded_plain` so the two cannot disagree about what an array is. A
+    disagreement either way is silent: converting whole a value the budget meant to
+    sample, or sampling one that was never a sequence.
+    """
+    return hasattr(value, "__len__") and not isinstance(value, (str, Sdf.AssetPath))
+
+
 def plain(value):
     """USD values are C++ types; JSON needs Python ones."""
     if value is None:
@@ -181,7 +198,7 @@ def plain(value):
             "asset_path": value.path,
             "resolved_path": value.resolvedPath or None,
         }
-    if hasattr(value, "__len__") and not isinstance(value, str):
+    if _is_array(value):
         return [plain(item) for item in value]
     return str(value)
 
@@ -292,6 +309,54 @@ def bounded_value(value, budget=None):
         "elements": value[:kept],
         "elements_truncated": {"reported": kept, "total": len(value)},
     }
+
+
+def bounded_plain(raw, budget=None):
+    """`bounded_value(plain(raw))`, without converting the elements it is about to drop.
+
+    `plain` is exact by contract, so it converts every element it is handed. Handing it a
+    713,718-element `points` array and trimming afterwards builds seven hundred thousand
+    Python objects in order to report nine hundred: 11.5 seconds, against the 66 ms that
+    composing the whole stage costs. Converting under the budget instead reports the same
+    elements and the same total in 28 ms.
+
+    Use this wherever a raw USD value is on its way into a result. `bounded_value` stays
+    for a value already converted — `diff_stages` compares `plain` output element by
+    element and bounds only what it reports, so its values reach the bound already exact.
+    """
+    limit = MAX_VALUE_BYTES if budget is None else budget
+    if limit is None or not _is_array(raw):
+        return plain(raw)
+
+    # Mirrors `_fit`'s accounting exactly, including its floor of one, so that what comes
+    # back is what `bounded_value(plain(raw))` would have returned.
+    kept = []
+    spent = 0
+    for item in raw:
+        converted = plain(item)
+        spent += len(json.dumps(converted, default=str)) + 1
+        if spent > limit and kept:
+            break
+        kept.append(converted)
+
+    total = len(raw)
+    if len(kept) >= total:
+        return kept
+    return {
+        "elements": kept,
+        "elements_truncated": {"reported": len(kept), "total": total},
+    }
+
+
+def layer_identifiers(stage):
+    """The stage's layer stack as identifiers, strongest first.
+
+    Every explainer that reports a layer stack wants exactly this list, so it lives next
+    to `root_layer_stack` rather than being retyped at each call site. Callers still name
+    their own field, because `profile_stage` calls it `root_layer_stack` and the rest call
+    it `layer_stack`.
+    """
+    return [layer.identifier for layer in root_layer_stack(stage)]
 
 
 def value_brief(value):
