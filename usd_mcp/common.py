@@ -181,7 +181,7 @@ def _is_array(value):
     disagreement either way is silent: converting whole a value the budget meant to
     sample, or sampling one that was never a sequence.
     """
-    return hasattr(value, "__len__") and not isinstance(value, (str, Sdf.AssetPath))
+    return hasattr(value, "__len__") and not isinstance(value, (str, dict, Sdf.AssetPath))
 
 
 def plain(value):
@@ -198,6 +198,10 @@ def plain(value):
             "asset_path": value.path,
             "resolved_path": value.resolvedPath or None,
         }
+    if isinstance(value, dict):
+        # Iterating a dict yields its keys, so the array branch below would report
+        # `customData = {"author": "kim"}` as `["author"]` — the values silently gone.
+        return {str(key): plain(item) for key, item in value.items()}
     if _is_array(value):
         return [plain(item) for item in value]
     return str(value)

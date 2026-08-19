@@ -394,23 +394,37 @@ def test_bounded_plain_matches_converting_then_bounding():
         assert bounded_plain(raw) == bounded_value(plain(raw))
 
 
-def test_bounded_plain_converts_only_what_it_reports():
-    """The saving is the whole reason the helper exists, so it is pinned, not assumed."""
+def test_bounded_plain_converts_only_what_it_reports(monkeypatch):
+    """The saving is the whole reason the helper exists, so it is counted, not assumed.
+
+    Counting conversions is what distinguishes this from the equivalence test above:
+    `bounded_value(plain(raw))` returns exactly the same answer and converts every one
+    of the 200,000 elements to do it. Only a call count can tell the two apart, so the
+    earlier version of this test — which built a counter and then never attached it —
+    passed against the implementation it was written to rule out.
+    """
     from pxr import Vt
 
-    from usd_mcp.common import bounded_plain
+    from usd_mcp import common
 
     converted = []
+    real_plain = common.plain
 
-    class Counted(float):
-        def __repr__(self):
-            converted.append(1)
-            return float.__repr__(self)
+    def counting_plain(value):
+        converted.append(1)
+        return real_plain(value)
 
-    big = Vt.DoubleArray([float(i) for i in range(200_000)])
-    result = bounded_plain(big)
+    monkeypatch.setattr(common, "plain", counting_plain)
+
+    big = Vt.DoubleArray([float(index) for index in range(200_000)])
+    result = common.bounded_plain(big)
 
     reported = result["elements_truncated"]["reported"]
     assert result["elements_truncated"]["total"] == 200_000
-    # One json.dumps per element reported, not per element held.
-    assert reported < 200_000 / 10
+    assert 0 < reported < 200_000
+
+    # One conversion per element reported, and none for the 199,000-odd it dropped.
+    assert len(converted) <= reported + 1, (
+        f"converted {len(converted)} elements to report {reported}; "
+        f"the whole array is being converted before the bound trims it"
+    )

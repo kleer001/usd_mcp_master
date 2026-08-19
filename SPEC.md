@@ -504,9 +504,9 @@ the trim would be the confident wrong answer this server exists to avoid.
 
 **Values as well as lists.** An array is the one value type with no upper size — a
 mesh's `points` is a single attribute and megabytes of JSON — so every field carrying an
-authored value is bounded too. Bounded value
-fields: `current_resolved_value`, `from`, `resolved_value`, `resolved_value_after`,
-`to`, `value`, `value_a`, `value_that_would_survive`, `value_b`.
+authored value is bounded too. Bounded value fields: `current_resolved_value`, `from`,
+`resolved_value`, `resolved_value_after`, `to`, `value`, `value_a`, `value_b`,
+`value_that_would_survive`.
 
 That list is checked the same way: `test_safety_contract.py` parses every
 `bounded_value()` and `bounded_plain()` call in the package and fails the build if the

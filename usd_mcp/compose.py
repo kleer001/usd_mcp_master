@@ -197,6 +197,16 @@ def metadata_edit_target_verdict(stage, prim, layer, field):
     """
     order = {candidate.identifier: i for i, candidate in enumerate(root_layer_stack(stage))}
     target_strength = order.get(layer.identifier)
+    if target_strength is None:
+        # Public, so it can be handed a layer `layer_in_root_stack` would have refused.
+        # Comparing against None raises TypeError from inside the loop below, which is
+        # not the `ValueError` this package documents for a target it will not accept.
+        raise ValueError(
+            f"{layer.identifier} is not in the root layer stack of "
+            f"{stage.GetRootLayer().identifier}, so its strength against `{field}` is "
+            f"not a question this can answer."
+        )
+
     blocker = None
     for spec in prim.GetPrimStack():
         strength = order.get(spec.layer.identifier)
@@ -208,19 +218,34 @@ def metadata_edit_target_verdict(stage, prim, layer, field):
         }
         break
 
-    return {
-        "would_win": blocker is None,
-        "blocked_by": "strength" if blocker else None,
-        "target_writable": is_writable(layer),
-        "outranked_by": blocker,
-        "value_that_would_survive": blocker["value"] if blocker else None,
-        "explanation": (
-            f"An opinion authored in {layer.identifier} would win: no stronger layer authors "
-            f"`{field}`."
-            if blocker is None
-            else f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
+    # Same two-part test as `edit_target_verdict`: an edit takes effect only in a layer
+    # that can be written and is strong enough. Reporting strength alone sent a caller to
+    # author into a package it can never save, under an explanation saying it would win.
+    writable = is_writable(layer)
+    blocked_by = None if writable else "read_only_layer"
+    if writable and blocker:
+        blocked_by = "strength"
+
+    if blocked_by == "read_only_layer":
+        explanation = packaged_layer_refusal(layer)
+    elif blocker:
+        explanation = (
+            f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
             f"authors `{field}` = {value_brief(blocker['value'])} and is stronger."
-        ),
+        )
+    else:
+        explanation = (
+            f"An opinion authored in {layer.identifier} would win: no stronger layer "
+            f"authors `{field}`."
+        )
+
+    return {
+        "would_win": blocked_by is None,
+        "blocked_by": blocked_by,
+        "target_writable": writable,
+        "outranked_by": blocker if blocked_by == "strength" else None,
+        "value_that_would_survive": blocker["value"] if blocker else None,
+        "explanation": explanation,
     }
 
 

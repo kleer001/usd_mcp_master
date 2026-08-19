@@ -98,6 +98,25 @@ def _called_attributes(tree):
             yield node.func.attr, node.lineno
 
 
+def _called_names(tree):
+    """Name and line of every bare `something(...)` call.
+
+    The forbidden calls do not all arrive through an attribute. `os.system` does, and
+    `exec`, `eval`, `compile`, and `__import__` do not — they are builtins, called by
+    bare name, and a contract that only walked `ast.Attribute` could not see them at
+    all. Checking both is what makes "no code loaded at runtime" a test.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            yield node.func.id, node.lineno
+
+
+def _calls(tree):
+    """Every call this contract can forbid, however it is spelled."""
+    yield from _called_attributes(tree)
+    yield from _called_names(tree)
+
+
 @pytest.mark.parametrize("path,tree", _modules(), ids=lambda v: v if isinstance(v, str) else "")
 def test_no_network_egress(path, tree):
     """Contract 1: stage contents never leave the machine."""
@@ -111,7 +130,7 @@ def test_no_process_execution(path, tree):
     imports = [(mod, line) for mod, line in _imported_roots(tree) if mod in PROCESS_MODULES]
     assert not imports, f"{path} imports a process module: {imports}"
 
-    calls = [(name, line) for name, line in _called_attributes(tree) if name in PROCESS_CALLS]
+    calls = [(name, line) for name, line in _calls(tree) if name in PROCESS_CALLS]
     assert not calls, f"{path} launches a process: {calls}"
 
 
@@ -141,9 +160,7 @@ def test_no_code_is_loaded_at_runtime(path, tree):
     imports = [(mod, line) for mod, line in _imported_roots(tree) if mod in RUNTIME_IMPORT_MODULES]
     assert not imports, f"{path} imports a runtime-import module: {imports}"
 
-    calls = [
-        (name, line) for name, line in _called_attributes(tree) if name in RUNTIME_IMPORT_CALLS
-    ]
+    calls = [(name, line) for name, line in _calls(tree) if name in RUNTIME_IMPORT_CALLS]
     assert not calls, f"{path} loads code at runtime: {calls}"
 
 
@@ -332,8 +349,13 @@ def test_spec_lists_exactly_the_fields_the_code_bounds_as_values():
     assert in_code, "no bounded_value()/bounded_plain() calls found; the parse is broken"
 
     spec = (Path(__file__).resolve().parent.parent / "SPEC.md").read_text(encoding="utf-8")
-    start = spec.index("Bounded value\nfields:")
-    clause = spec[start : spec.index("That list is checked the same way")]
+    # Matched against whitespace-normalised text: which words a Markdown paragraph
+    # wraps on is not part of the contract, and a test that made it part of the contract
+    # would fail on a reflow with `substring not found`.
+    flat = " ".join(spec.split())
+    clause = flat[
+        flat.index("Bounded value fields:") : flat.index("That list is checked the same way")
+    ]
     in_spec = set(re.findall(r"`([a-z_]+)`", clause))
 
     assert in_spec == in_code, (
