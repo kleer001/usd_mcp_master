@@ -25,12 +25,10 @@ from pxr import Tf, Usd, UsdGeom
 
 from usd_mcp.common import (
     bounded_plain,
-    bounded_value,
     open_stage,
     plain,
     require_attribute,
     require_prim,
-    root_layer_stack,
     value_brief,
 )
 from usd_mcp.compose import (
@@ -38,6 +36,8 @@ from usd_mcp.compose import (
     instance_proxy_refusal,
     is_writable,
     layer_in_root_stack,
+    metadata_edit_target_verdict,
+    packaged_layer_refusal,
 )
 
 AUDIT_LOG_ENV = "USD_MCP_AUDIT_LOG"
@@ -58,7 +58,11 @@ def set_attribute(stage_path, prim_path, attribute_name, value, target_layer, co
     layer = _writable_layer(stage, target_layer)
     verdict = edit_target_verdict(prim, attr, layer)
 
-    prior = plain(attr.Get())
+    # Held raw and converted at each use: bounded for what is reported, whole for the
+    # audit log, and whole only on the path that writes one. `plain` on a points array
+    # of three-quarters of a million elements costs eleven seconds, and the dry run —
+    # the default call — reports a few hundred of them.
+    prior = attr.Get()
     plan = _plan("attribute", attribute_name, prior, value, layer, verdict, confirm)
     if not confirm:
         return plan
@@ -67,7 +71,7 @@ def set_attribute(stage_path, prim_path, attribute_name, value, target_layer, co
         _author(lambda: attr.Set(value), attribute_name, value)
     _save(layer)
 
-    return _applied(plan, stage_path, prim, layer, attribute_name, prior, plain(attr.Get()))
+    return _applied(plan, stage_path, prim, layer, attribute_name, prior, attr.Get())
 
 
 def set_visibility(stage_path, prim_path, visible, target_layer, confirm=False):
@@ -123,7 +127,7 @@ def set_active(stage_path, prim_path, active, target_layer, confirm=False):
     layer = _writable_layer(stage, target_layer)
 
     prior = prim.IsActive()
-    verdict = _metadata_verdict(stage, prim, layer, "active")
+    verdict = metadata_edit_target_verdict(stage, prim, layer, "active")
     plan = _plan("metadata", "active", prior, active, layer, verdict, confirm)
     if not confirm:
         return plan
@@ -145,7 +149,7 @@ def _plan(kind, name, prior, new, layer, verdict, confirm):
         "change": {
             "kind": kind,
             "name": name,
-            "from": bounded_value(prior),
+            "from": bounded_plain(prior),
             "to": bounded_plain(new),
         },
         "would_win": verdict["would_win"],
@@ -174,7 +178,7 @@ def _applied(plan, stage_path, prim, layer, name, prior, after):
     """
     plan = dict(plan)
     plan["applied"] = True
-    plan["resolved_value_after"] = bounded_value(after)
+    plan["resolved_value_after"] = bounded_plain(after)
     if plan["blocked_by"] == "strength":
         plan["explanation"] = (
             f"Authored into {layer.identifier}, and the resolved value did not change: "
@@ -184,48 +188,14 @@ def _applied(plan, stage_path, prim, layer, name, prior, after):
         )
     else:
         plan["explanation"] = (
-            f"Authored into {layer.identifier}. {name} is now {value_brief(after)}."
+            f"Authored into {layer.identifier}. {name} is now "
+            f"{value_brief(plan['resolved_value_after'])}."
         )
+    # `plain`, not `bounded_plain`: a record of the leading elements is not a record.
     plan["audit_log"] = _audit(
-        stage_path, str(prim.GetPath()), layer.identifier, name, prior, after
+        stage_path, str(prim.GetPath()), layer.identifier, name, plain(prior), plain(after)
     )
     return plan
-
-
-def _metadata_verdict(stage, prim, layer, field):
-    """The strength verdict for prim metadata, which has no `UsdAttributeQuery`.
-
-    Only a layer in the root layer stack may be a target, and for a given prim a local
-    opinion outranks anything arriving through a reference, so position in the root
-    layer stack settles it.
-    """
-    order = {candidate.identifier: i for i, candidate in enumerate(root_layer_stack(stage))}
-    target_strength = order.get(layer.identifier)
-    blocker = None
-    for spec in prim.GetPrimStack():
-        strength = order.get(spec.layer.identifier)
-        if strength is None or strength >= target_strength or not spec.HasInfo(field):
-            continue
-        blocker = {
-            "layer": spec.layer.identifier,
-            "value": bounded_plain(spec.GetInfo(field)),
-        }
-        break
-
-    return {
-        "would_win": blocker is None,
-        "blocked_by": "strength" if blocker else None,
-        "target_writable": True,
-        "outranked_by": blocker,
-        "value_that_would_survive": blocker["value"] if blocker else None,
-        "explanation": (
-            f"An opinion authored in {layer.identifier} would win: no stronger layer authors "
-            f"`{field}`."
-            if blocker is None
-            else f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
-            f"authors `{field}` = {value_brief(blocker['value'])} and is stronger."
-        ),
-    }
 
 
 def _require_authorable(prim):
@@ -238,10 +208,7 @@ def _writable_layer(stage, target_layer):
     """The target layer, or a refusal naming why it cannot hold an edit."""
     layer = layer_in_root_stack(stage, target_layer)
     if not is_writable(layer):
-        raise ValueError(
-            f"{layer.identifier} cannot be authored into. A packaged layer accepts an edit in "
-            f"memory and then refuses to save it. Pick a layer outside the package."
-        )
+        raise ValueError(packaged_layer_refusal(layer))
     return layer
 
 

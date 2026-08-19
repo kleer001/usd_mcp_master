@@ -170,6 +170,60 @@ def edit_target_verdict(prim, attr, layer):
     }
 
 
+def packaged_layer_refusal(layer):
+    """Why a packaged layer cannot hold an edit, whoever is asking.
+
+    `explain_edit_target` reports this and the write path raises it. Said twice it had
+    already drifted — the read path offered repackaging as a remedy and the write path
+    did not — which is the drift `instance_proxy_refusal` below exists to prevent.
+    """
+    return (
+        f"{layer.identifier} cannot be authored into. It is a packaged layer, which "
+        f"accepts an edit in memory and then refuses to save it. Strength is not the "
+        f"problem here — pick a layer outside the package, or repackage the asset."
+    )
+
+
+def metadata_edit_target_verdict(stage, prim, layer, field):
+    """The strength verdict for prim metadata, which has no `UsdAttributeQuery`.
+
+    Only a layer in the root layer stack may be a target, and for a given prim a local
+    opinion outranks anything arriving through a reference, so position in the root
+    layer stack settles it.
+
+    Returns the same shape as `edit_target_verdict` and lives beside it for that reason:
+    there is no attribute to query here, but the reasoning is composition strength either
+    way, and a caller should not have to know which of the two answered.
+    """
+    order = {candidate.identifier: i for i, candidate in enumerate(root_layer_stack(stage))}
+    target_strength = order.get(layer.identifier)
+    blocker = None
+    for spec in prim.GetPrimStack():
+        strength = order.get(spec.layer.identifier)
+        if strength is None or strength >= target_strength or not spec.HasInfo(field):
+            continue
+        blocker = {
+            "layer": spec.layer.identifier,
+            "value": bounded_plain(spec.GetInfo(field)),
+        }
+        break
+
+    return {
+        "would_win": blocker is None,
+        "blocked_by": "strength" if blocker else None,
+        "target_writable": is_writable(layer),
+        "outranked_by": blocker,
+        "value_that_would_survive": blocker["value"] if blocker else None,
+        "explanation": (
+            f"An opinion authored in {layer.identifier} would win: no stronger layer authors "
+            f"`{field}`."
+            if blocker is None
+            else f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
+            f"authors `{field}` = {value_brief(blocker['value'])} and is stronger."
+        ),
+    }
+
+
 def instance_proxy_refusal(prim_path):
     """Why an opinion authored at an instance proxy's path cannot take effect.
 
@@ -198,11 +252,7 @@ def is_writable(layer):
 
 def _edit_target_explanation(layer, blocked_by, blocker):
     if blocked_by == "read_only_layer":
-        return (
-            f"{layer.identifier} cannot be authored into. It is a packaged layer, which "
-            f"accepts an edit in memory and then refuses to save it. Strength is not the "
-            f"problem here — pick a layer outside the package, or repackage the asset."
-        )
+        return packaged_layer_refusal(layer)
     if blocked_by == "strength":
         return (
             f"An opinion authored in {layer.identifier} would lose and the resolved value "

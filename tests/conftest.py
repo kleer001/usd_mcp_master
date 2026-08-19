@@ -1,6 +1,30 @@
 import pytest
 from pxr import UsdUtils
 
+from usd_mcp import common
+
+
+@pytest.fixture(autouse=True)
+def process_wide_state_is_restored():
+    """Put `common`'s module-level knobs back after every test.
+
+    Both are deliberately process-wide — `unbound_results()` and `enable_stage_cache()`
+    are called once by a front door at startup and never per call, which is what lets
+    every `bounded()` read the budget rather than freeze it. That is safe in a process
+    that answers one command and exits, and unsafe in a test session, where whichever
+    test called them last decides what every later test sees.
+
+    It had already bitten: `unbound_results()` nulls both budgets, the CLI's `--full`
+    tests restored at most one of them through `monkeypatch`, and everything ordered
+    after them ran with the bound switched off — so a bounding assertion there passed
+    whether or not anything was bounding.
+    """
+    budgets = (common.MAX_FIELD_BYTES, common.MAX_VALUE_BYTES)
+    cache, limit = common._stage_cache, common._cache_limit
+    yield
+    common.MAX_FIELD_BYTES, common.MAX_VALUE_BYTES = budgets
+    common._stage_cache, common._cache_limit = cache, limit
+
 BASE_USDA = """#usda 1.0
 
 def Xform "World"
