@@ -183,11 +183,19 @@ def _self_and_ancestors(prim):
         prim = prim.GetParent()
 
 
-def _authored_in(prim, attribute_name):
-    attr = prim.GetAttribute(attribute_name)
-    if not attr:
-        return f"no authored `{attribute_name}` opinion."
-    stack = attr.GetPropertyStack(Usd.TimeCode.Default())
-    if not stack:
-        return f"no authored `{attribute_name}` opinion."
-    return "authored in " + ", ".join(spec.layer.identifier for spec in stack)
+def _authored_in(prim, field_name):
+    """Name every layer with an opinion on `field_name`, attribute or metadata.
+
+    `active` is prim metadata, not an attribute, so `GetAttribute` never finds it and
+    an attribute-only lookup reports no opinion for the one failure where "which file
+    did this" is the whole question. Metadata opinions live on the prim stack instead,
+    each spec carrying the field under `HasInfo`.
+    """
+    attr = prim.GetAttribute(field_name)
+    if attr:
+        specs = attr.GetPropertyStack(Usd.TimeCode.Default())
+    else:
+        specs = [spec for spec in prim.GetPrimStack() if spec.HasInfo(field_name)]
+    if not specs:
+        return f"no authored `{field_name}` opinion."
+    return "authored in " + ", ".join(spec.layer.identifier for spec in specs)
