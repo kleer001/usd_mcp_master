@@ -10,17 +10,12 @@ from pxr import Sdf, Usd, UsdGeom
 
 from usd_mcp.common import (
     bounded,
-    bounded_value,
+    bounded_plain,
+    layer_identifiers,
     open_stage,
-    plain,
     require_attribute,
     require_prim,
-    root_layer_stack,
 )
-
-# Visibility and purpose inherit down namespace, so the answer to "why is this
-# invisible" is usually authored on an ancestor, not on the prim asked about.
-_INHERITED_CHECKS = ("visibility", "purpose")
 
 
 def explain_value(stage_path, prim_path, attribute_name, time_code=None):
@@ -50,11 +45,11 @@ def explain_value(stage_path, prim_path, attribute_name, time_code=None):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "type_name": str(attr.GetTypeName()),
-        "resolved_value": bounded_value(plain(attr.Get(tc))),
+        "resolved_value": bounded_plain(attr.Get(tc)),
         "resolved_from": str(resolve_info.GetSource()),
         "time_code": "default" if time_code is None else time_code,
         **bounded("authored_opinions", opinions),
-        **bounded("layer_stack", [layer.identifier for layer in root_layer_stack(stage)]),
+        **bounded("layer_stack", layer_identifiers(stage)),
     }
 
 
@@ -132,7 +127,7 @@ def _describe_spec(spec):
         "path": str(spec.path),
         "specifier": str(owner.specifier) if owner else None,
         "has_default": has_default,
-        "value": bounded_value(plain(spec.default)) if has_default else None,
+        "value": bounded_plain(spec.default) if has_default else None,
         "time_samples": layer.GetNumTimeSamplesForPath(spec.path),
     }
 
@@ -143,17 +138,20 @@ def _explain_missing_prim(stage, prim_path):
     for name in Sdf.Path(prim_path).GetPrefixes():
         candidate = stage.GetPrimAtPath(name)
         if not candidate:
+            stopped_by_deactivation = (
+                deepest != stage.GetPseudoRoot() and not deepest.IsActive()
+            )
+            because = (
+                f", and {deepest.GetPath()} is deactivated, so nothing below it composes."
+                if stopped_by_deactivation
+                else "."
+            )
             return {
                 "prim": prim_path,
                 "visible": False,
                 "reasons": [
                     f"{prim_path} does not exist on this stage. The path composes as far as "
-                    f"{deepest.GetPath()} and stops: {name} is not defined there"
-                    + (
-                        f", and {deepest.GetPath()} is deactivated, so nothing below it composes."
-                        if deepest != stage.GetPseudoRoot() and not deepest.IsActive()
-                        else "."
-                    )
+                    f"{deepest.GetPath()} and stops: {name} is not defined there{because}"
                 ],
                 "checks": {"exists": False, "deepest_existing": str(deepest.GetPath())},
             }
@@ -183,11 +181,19 @@ def _self_and_ancestors(prim):
         prim = prim.GetParent()
 
 
-def _authored_in(prim, attribute_name):
-    attr = prim.GetAttribute(attribute_name)
-    if not attr:
-        return f"no authored `{attribute_name}` opinion."
-    stack = attr.GetPropertyStack(Usd.TimeCode.Default())
-    if not stack:
-        return f"no authored `{attribute_name}` opinion."
-    return "authored in " + ", ".join(spec.layer.identifier for spec in stack)
+def _authored_in(prim, field_name):
+    """Name every layer with an opinion on `field_name`, attribute or metadata.
+
+    `active` is prim metadata, not an attribute, so `GetAttribute` never finds it and
+    an attribute-only lookup reports no opinion for the one failure where "which file
+    did this" is the whole question. Metadata opinions live on the prim stack instead,
+    each spec carrying the field under `HasInfo`.
+    """
+    attr = prim.GetAttribute(field_name)
+    if attr:
+        specs = attr.GetPropertyStack(Usd.TimeCode.Default())
+    else:
+        specs = [spec for spec in prim.GetPrimStack() if spec.HasInfo(field_name)]
+    if not specs:
+        return f"no authored `{field_name}` opinion."
+    return "authored in " + ", ".join(spec.layer.identifier for spec in specs)

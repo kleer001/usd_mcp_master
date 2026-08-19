@@ -21,7 +21,7 @@ from usd_mcp.common import bounded, bounded_value, value_brief
 from usd_mcp.compose import explain_prim, explain_variants
 from usd_mcp.diff import diff_stages
 from usd_mcp.explain import explain_value
-from usd_mcp.portability import _SEVERITY, check_portability
+from usd_mcp.portability import check_portability
 from usd_mcp.profile import profile_stage
 from usd_mcp.write import set_attribute
 
@@ -167,10 +167,19 @@ class TestPortabilityBounds:
         assert result["summary"]["unreadable"] == 60
 
     def test_the_worst_materials_are_the_ones_kept(self, looks):
-        """Sorted worst first, so a bound drops what would have rendered anyway."""
+        """Sorted worst first, so a bound drops what would have rendered anyway.
+
+        The expected order is written out rather than derived from `_SEVERITY`. Sorting
+        the expectation with the same table the code sorts by proves the sort call runs,
+        not that it runs the right way round — swap two entries in `_SEVERITY` and a
+        test written that way still passes. This order is the one SPEC.md publishes.
+        """
         materials = check_portability(looks, "renderman")["materials"]
         verdicts = [entry["verdict"] for entry in materials]
-        assert verdicts == sorted(verdicts, key=lambda v: -_SEVERITY[v])
+        worst_first = ["unreadable", "renderer_specific", "preview_fallback", "native"]
+
+        assert verdicts == sorted(verdicts, key=worst_first.index)
+        assert set(verdicts) == set(worst_first), "the fixture no longer covers every verdict"
 
     def test_findings_read_every_material_not_the_bounded_slice(self, wide, lowered_limit):
         """A count of what will not survive is only true if it counted all of them."""
@@ -356,3 +365,66 @@ class TestTheListLimitDoesNotReachRealWork:
         assert self._untruncated(profile_stage(wide[0])) == []
         assert self._untruncated(check_portability(wide[0], "preview")) == []
         assert self._untruncated(explain_value(wide[0], "/World/Contested", "size")) == []
+
+
+def test_bounded_plain_matches_converting_then_bounding():
+    """`bounded_plain` is `bounded_value(plain(...))` without the discarded conversions.
+
+    The point of the helper is that it never builds the elements the budget drops —
+    a 713,718-element `points` array cost 11.3 s to convert and 25.8 ms to sample. It
+    is only worth having if what it reports is identical, so this pins the equivalence
+    across every shape `plain` dispatches on rather than only the array it optimises.
+    """
+    from pxr import Gf, Sdf, Vt
+
+    from usd_mcp.common import bounded_plain, plain
+
+    cases = [
+        None,
+        5.0,
+        "hello",
+        Sdf.AssetPath("./tex/diffuse.exr"),
+        Gf.Vec3f(1, 2, 3),
+        Vt.Vec3fArray([]),
+        Vt.Vec3fArray([Gf.Vec3f(i, 0, 1.5) for i in range(50)]),
+        Vt.Vec3fArray([Gf.Vec3f(i, 0, 1.5) for i in range(40_000)]),
+        Vt.TokenArray(["a"] * 40_000),
+    ]
+    for raw in cases:
+        assert bounded_plain(raw) == bounded_value(plain(raw))
+
+
+def test_bounded_plain_converts_only_what_it_reports(monkeypatch):
+    """The saving is the whole reason the helper exists, so it is counted, not assumed.
+
+    Counting conversions is what distinguishes this from the equivalence test above:
+    `bounded_value(plain(raw))` returns exactly the same answer and converts every one
+    of the 200,000 elements to do it. Only a call count can tell the two apart, so the
+    earlier version of this test — which built a counter and then never attached it —
+    passed against the implementation it was written to rule out.
+    """
+    from pxr import Vt
+
+    from usd_mcp import common
+
+    converted = []
+    real_plain = common.plain
+
+    def counting_plain(value):
+        converted.append(1)
+        return real_plain(value)
+
+    monkeypatch.setattr(common, "plain", counting_plain)
+
+    big = Vt.DoubleArray([float(index) for index in range(200_000)])
+    result = common.bounded_plain(big)
+
+    reported = result["elements_truncated"]["reported"]
+    assert result["elements_truncated"]["total"] == 200_000
+    assert 0 < reported < 200_000
+
+    # One conversion per element reported, and none for the 199,000-odd it dropped.
+    assert len(converted) <= reported + 1, (
+        f"converted {len(converted)} elements to report {reported}; "
+        f"the whole array is being converted before the bound trims it"
+    )

@@ -65,6 +65,19 @@ def test_deactivated_prim_itself_is_reported(shot):
     assert "deactivated" in result["reasons"][0]
 
 
+def test_deactivation_names_the_layer_that_authored_it(shot):
+    """`active` is metadata, not an attribute; an attribute-only lookup misses it.
+
+    Reporting "no authored `active` opinion" for a prim a layer plainly deactivated
+    asserts the opposite of the truth, on the one failure where naming the layer is
+    the entire question.
+    """
+    result = why_not_visible(shot, "/World/Off")
+
+    assert "base.usda" in result["reasons"][0]
+    assert "no authored" not in result["reasons"][0]
+
+
 def test_guide_purpose_is_reported(shot):
     result = why_not_visible(shot, "/World/Guide")
 

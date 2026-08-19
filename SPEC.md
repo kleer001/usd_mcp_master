@@ -504,10 +504,13 @@ the trim would be the confident wrong answer this server exists to avoid.
 
 **Values as well as lists.** An array is the one value type with no upper size — a
 mesh's `points` is a single attribute and megabytes of JSON — so every field carrying an
-authored value is bounded too: `resolved_value`, an opinion's `value`,
-`current_resolved_value`, `value_that_would_survive`, `outranked_by.value`, `diff_stages`'
-`value_a` and `value_b`, and the write path's `change.from`, `change.to`, and
-`resolved_value_after`.
+authored value is bounded too. Bounded value fields: `current_resolved_value`, `from`,
+`resolved_value`, `resolved_value_after`, `to`, `value`, `value_a`, `value_b`,
+`value_that_would_survive`.
+
+That list is checked the same way: `test_safety_contract.py` parses every
+`bounded_value()` and `bounded_plain()` call in the package and fails the build if the
+two disagree.
 
 A trimmed array becomes a dict rather than a shorter list, because a shorter list reads
 as the whole value and nothing in it says otherwise:

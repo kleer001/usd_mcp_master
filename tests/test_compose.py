@@ -152,3 +152,97 @@ def test_an_instance_proxy_cannot_hold_an_opinion_in_any_layer(composed):
     assert result["blocked_by"] == "instance_proxy"
     assert result["outranked_by"] is None
     assert "discarded" in result["explanation"]
+
+
+def test_find_layer_prefers_an_exact_identifier_over_a_resolved_path(tmp_path):
+    """Two candidates can name one file. The one spelled as asked wins.
+
+    Comparing identifiers across every candidate before resolving any path is what makes
+    the ordinary call — a caller handing back an identifier this package reported — cost
+    no syscalls at all. It also decides this tie, which the previous per-candidate loop
+    settled by list order: a symlinked alias earlier in the stack used to beat the exact
+    match behind it. Preferring the exact spelling is the deliberate answer.
+    """
+    from usd_mcp.common import find_layer
+
+    real = tmp_path / "base.usda"
+    real.write_text("#usda 1.0\n")
+    alias = tmp_path / "alias.usda"
+    alias.symlink_to(real)
+
+    class _Layer:
+        def __init__(self, identifier):
+            self.identifier = identifier
+
+    candidates = [_Layer(str(alias)), _Layer(str(real))]
+
+    assert find_layer(candidates, str(real)).identifier == str(real)
+    assert find_layer(candidates, str(alias)).identifier == str(alias)
+    assert find_layer(candidates, str(tmp_path / "absent.usda")) is None
+
+    # The second pass, which the exact-identifier sweep above never reaches: a caller
+    # spelling the layer as the symlink when the stack holds the real path, or the
+    # reverse. Nothing else in the suite gets here, so breaking the resolved-path
+    # comparison would silently stop accepting either spelling with the suite green.
+    assert find_layer([_Layer(str(real))], str(alias)).identifier == str(real)
+    assert find_layer([_Layer(str(alias))], str(real)).identifier == str(alias)
+
+
+def test_metadata_verdict_refuses_a_layer_that_cannot_be_written(packaged):
+    """Strength is the wrong question when the layer cannot keep the edit at all.
+
+    `edit_target_verdict` has always answered this for attributes. The metadata verdict
+    reported strength alone, so a packaged layer came back `would_win: True` under an
+    explanation saying the edit would win — into a layer USD refuses to save.
+    """
+    from usd_mcp.common import open_stage, require_prim
+    from usd_mcp.compose import metadata_edit_target_verdict
+
+    stage = open_stage(packaged)
+    prim = require_prim(stage, "/World/Ball")
+    verdict = metadata_edit_target_verdict(stage, prim, stage.GetRootLayer(), "active")
+
+    assert verdict["target_writable"] is False
+    assert verdict["would_win"] is False
+    assert verdict["blocked_by"] == "read_only_layer"
+    assert "cannot be authored into" in verdict["explanation"]
+
+
+def test_metadata_verdict_refuses_a_layer_outside_the_root_stack(shot):
+    """The documented failure is `ValueError`, not whatever comparing to None raises.
+
+    `layer_in_root_stack` guards the write path's call. Nothing guards a direct one, and
+    a layer with no position in the stack used to reach `strength >= None` and raise
+    `TypeError` from inside the loop.
+    """
+    from pxr import Sdf
+
+    from usd_mcp.common import open_stage, require_prim
+    from usd_mcp.compose import metadata_edit_target_verdict
+
+    stage = open_stage(shot)
+    prim = require_prim(stage, "/World/Ball")
+    outside = Sdf.Layer.CreateAnonymous("outside.usda")
+
+    with pytest.raises(ValueError, match="not in the root layer stack"):
+        metadata_edit_target_verdict(stage, prim, outside, "active")
+
+
+def test_plain_keeps_a_dictionary_valued_metadata_field():
+    """A dict is not an array, and iterating one yields only its keys.
+
+    `customData` and `assetInfo` are dictionary-valued, and prim metadata reaches
+    `plain` through the metadata verdict, so reporting `{"author": "kim"}` as
+    `["author"]` would drop the answer and keep the question.
+    """
+    from usd_mcp.common import bounded_plain, plain
+
+    assert plain({"author": "kim", "depth": 3}) == {"author": "kim", "depth": 3}
+    assert plain({"nested": {"x": 1.5}}) == {"nested": {"x": 1.5}}
+    assert bounded_plain({"author": "kim"}) == {"author": "kim"}
+
+    # And the fallback under all of it: a USD type that is neither scalar, asset path,
+    # dict, nor sequence still has to serialise, so it becomes its string form.
+    from pxr import Sdf
+
+    assert plain(Sdf.Path("/World/Ball")) == "/World/Ball"

@@ -7,15 +7,14 @@ in force, and whether an edit aimed at a given layer would win or lose. All thre
 read; none authors.
 """
 
-import os
-
 from pxr import Usd
 
 from usd_mcp.common import (
     bounded,
-    bounded_value,
+    bounded_plain,
+    find_layer,
+    layer_identifiers,
     open_stage,
-    plain,
     require_attribute,
     require_prim,
     root_layer_stack,
@@ -62,7 +61,7 @@ def explain_prim(stage_path, prim_path):
         "specifier": str(prim.GetSpecifier()),
         **bounded("composition_arcs", arcs),
         "instancing": _instancing(prim),
-        **bounded("layer_stack", [layer.identifier for layer in root_layer_stack(stage)]),
+        **bounded("layer_stack", layer_identifiers(stage)),
     }
 
 
@@ -110,10 +109,8 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         "prim": str(prim.GetPath()),
         "attribute": attribute_name,
         "target_layer": layer.identifier,
-        "current_resolved_value": bounded_value(plain(attr.Get())),
-        **bounded(
-            "layer_stack", [candidate.identifier for candidate in root_layer_stack(stage)]
-        ),
+        "current_resolved_value": bounded_plain(attr.Get()),
+        **bounded("layer_stack", layer_identifiers(stage)),
         **edit_target_verdict(prim, attr, layer),
     }
 
@@ -131,18 +128,13 @@ def edit_target_verdict(prim, attr, layer):
         return {
             "would_win": False,
             "blocked_by": "instance_proxy",
-            "target_writable": _is_writable(layer),
+            "target_writable": is_writable(layer),
             "outranked_by": None,
             "value_that_would_survive": None,
-            "explanation": (
-                f"{prim.GetPath()} is an instance proxy: it exists only through an ancestor "
-                f"marked `instanceable`, and an opinion authored at this path is discarded "
-                f"whatever layer it goes in. Author on the corresponding prim in the "
-                f"prototype's source, or clear `instanceable` on the ancestor."
-            ),
+            "explanation": instance_proxy_refusal(prim.GetPath()),
         }
 
-    writable = _is_writable(layer)
+    writable = is_writable(layer)
     root_arc = Usd.PrimCompositionQuery(prim).GetCompositionArcs()[0]
     stronger = Usd.AttributeQuery(attr, root_arc.MakeResolveTargetStrongerThan(layer))
 
@@ -158,7 +150,7 @@ def edit_target_verdict(prim, attr, layer):
         winner = opinions[0]
         blocker = {
             "layer": winner.layer.identifier,
-            "value": bounded_value(plain(winner.default)) if winner.HasInfo("default") else None,
+            "value": bounded_plain(winner.default) if winner.HasInfo("default") else None,
         }
 
     # would_win answers "would an edit here take effect", which needs both a layer that
@@ -173,12 +165,107 @@ def edit_target_verdict(prim, attr, layer):
         "blocked_by": blocked_by,
         "target_writable": writable,
         "outranked_by": blocker if blocked_by == "strength" else None,
-        "value_that_would_survive": bounded_value(plain(stronger.Get())) if outranked else None,
+        "value_that_would_survive": bounded_plain(stronger.Get()) if outranked else None,
         "explanation": _edit_target_explanation(layer, blocked_by, blocker),
     }
 
 
-def _is_writable(layer):
+def packaged_layer_refusal(layer):
+    """Why a packaged layer cannot hold an edit, whoever is asking.
+
+    `explain_edit_target` reports this and the write path raises it. Said twice it had
+    already drifted — the read path offered repackaging as a remedy and the write path
+    did not — which is the drift `instance_proxy_refusal` below exists to prevent.
+    """
+    return (
+        f"{layer.identifier} cannot be authored into. It is a packaged layer, which "
+        f"accepts an edit in memory and then refuses to save it. Strength is not the "
+        f"problem here — pick a layer outside the package, or repackage the asset."
+    )
+
+
+def metadata_edit_target_verdict(stage, prim, layer, field):
+    """The strength verdict for prim metadata, which has no `UsdAttributeQuery`.
+
+    Only a layer in the root layer stack may be a target, and for a given prim a local
+    opinion outranks anything arriving through a reference, so position in the root
+    layer stack settles it.
+
+    Returns the same shape as `edit_target_verdict` and lives beside it for that reason:
+    there is no attribute to query here, but the reasoning is composition strength either
+    way, and a caller should not have to know which of the two answered.
+    """
+    order = {candidate.identifier: i for i, candidate in enumerate(root_layer_stack(stage))}
+    target_strength = order.get(layer.identifier)
+    if target_strength is None:
+        # Public, so it can be handed a layer `layer_in_root_stack` would have refused.
+        # Comparing against None raises TypeError from inside the loop below, which is
+        # not the `ValueError` this package documents for a target it will not accept.
+        raise ValueError(
+            f"{layer.identifier} is not in the root layer stack of "
+            f"{stage.GetRootLayer().identifier}, so its strength against `{field}` is "
+            f"not a question this can answer."
+        )
+
+    blocker = None
+    for spec in prim.GetPrimStack():
+        strength = order.get(spec.layer.identifier)
+        if strength is None or strength >= target_strength or not spec.HasInfo(field):
+            continue
+        blocker = {
+            "layer": spec.layer.identifier,
+            "value": bounded_plain(spec.GetInfo(field)),
+        }
+        break
+
+    # Same two-part test as `edit_target_verdict`: an edit takes effect only in a layer
+    # that can be written and is strong enough. Reporting strength alone sent a caller to
+    # author into a package it can never save, under an explanation saying it would win.
+    writable = is_writable(layer)
+    blocked_by = None if writable else "read_only_layer"
+    if writable and blocker:
+        blocked_by = "strength"
+
+    if blocked_by == "read_only_layer":
+        explanation = packaged_layer_refusal(layer)
+    elif blocker:
+        explanation = (
+            f"An opinion authored in {layer.identifier} would lose: {blocker['layer']} "
+            f"authors `{field}` = {value_brief(blocker['value'])} and is stronger."
+        )
+    else:
+        explanation = (
+            f"An opinion authored in {layer.identifier} would win: no stronger layer "
+            f"authors `{field}`."
+        )
+
+    return {
+        "would_win": blocked_by is None,
+        "blocked_by": blocked_by,
+        "target_writable": writable,
+        "outranked_by": blocker if blocked_by == "strength" else None,
+        "value_that_would_survive": blocker["value"] if blocker else None,
+        "explanation": explanation,
+    }
+
+
+def instance_proxy_refusal(prim_path):
+    """Why an opinion authored at an instance proxy's path cannot take effect.
+
+    `edit_target_verdict` reports this and the write path raises it, so the explanation
+    and the refusal are one sentence rather than two that drift. `_instancing`'s note
+    deliberately does not share it: that one describes a prim rather than refusing an
+    edit, and its own test pins its wording.
+    """
+    return (
+        f"{prim_path} is an instance proxy: it exists only through an ancestor "
+        f"marked `instanceable`, and an opinion authored at this path is discarded "
+        f"whatever layer it goes in. Author on the corresponding prim in the "
+        f"prototype's source, or clear `instanceable` on the ancestor."
+    )
+
+
+def is_writable(layer):
     """Whether scene description authored into this layer could ever be committed.
 
     A packaged layer — a `.usdz` and anything inside one — accepts an edit in memory
@@ -190,11 +277,7 @@ def _is_writable(layer):
 
 def _edit_target_explanation(layer, blocked_by, blocker):
     if blocked_by == "read_only_layer":
-        return (
-            f"{layer.identifier} cannot be authored into. It is a packaged layer, which "
-            f"accepts an edit in memory and then refuses to save it. Strength is not the "
-            f"problem here — pick a layer outside the package, or repackage the asset."
-        )
+        return packaged_layer_refusal(layer)
     if blocked_by == "strength":
         return (
             f"An opinion authored in {layer.identifier} would lose and the resolved value "
@@ -244,18 +327,20 @@ def _instancing(prim):
 def _selection_opinions(prim, variant_set_name):
     """Every layer authoring a selection for this variant set, strongest first."""
     opinions = []
-    for strength, spec in enumerate(prim.GetPrimStack()):
+    for prim_stack_index, spec in enumerate(prim.GetPrimStack()):
         selection = spec.variantSelections.get(variant_set_name)
         if selection is None:
             continue
         opinions.append(
             {
+                # Strength among the selections, which is not the position in the prim
+                # stack: the specs between two selections author something else.
                 "strength": len(opinions),
                 "layer": spec.layer.identifier,
                 "path": str(spec.path),
                 "selection": selection,
                 "wins": not opinions,
-                "prim_stack_index": strength,
+                "prim_stack_index": prim_stack_index,
             }
         )
     return opinions
@@ -270,11 +355,10 @@ def layer_in_root_stack(stage, target_layer):
     about the exact question this server exists to get right.
     """
     candidates = root_layer_stack(stage)
-    wanted = os.path.realpath(target_layer)
-    for layer in candidates:
-        if layer.identifier == target_layer or os.path.realpath(layer.identifier) == wanted:
-            return layer
+    layer = find_layer(candidates, target_layer)
+    if layer is not None:
+        return layer
     raise ValueError(
         f"{target_layer} is not in the root layer stack of {stage.GetRootLayer().identifier}. "
-        f"Layers open for an edit here: {[layer.identifier for layer in candidates]}"
+        f"Layers open for an edit here: {[candidate.identifier for candidate in candidates]}"
     )

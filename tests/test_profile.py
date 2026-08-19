@@ -150,3 +150,43 @@ def test_variant_contents_count_as_authored_scene_description(tmp_path):
 def test_a_missing_stage_raises(tmp_path):
     with pytest.raises(ValueError, match="could not open as a USD stage"):
         profile_stage(str(tmp_path / "nosuchfile.usda"))
+
+
+def test_samples_never_change_agrees_with_a_naive_walk(tmp_path):
+    """The probe-then-bulk read must answer exactly what a query per sample answers.
+
+    `_samples_never_change` reads the first and last sample one at a time and only then
+    pulls the series in one call, which is 1.86x faster on the constant attributes it
+    exists to find and level on animated ones. The speed is worthless if it ever
+    disagrees, so the cases that could diverge are pinned: constant, differing at the
+    end, differing only in the middle (where the end probe passes and the bulk read has
+    to catch it), and a single sample.
+    """
+    from pxr import Sdf, Usd, UsdGeom
+
+    from usd_mcp.profile import _samples_never_change
+
+    layer = Sdf.Layer.CreateAnonymous(".usda")
+    stage = Usd.Stage.Open(layer)
+    series = {
+        "constant": [1.0, 1.0, 1.0, 1.0, 1.0],
+        "differs_at_end": [1.0, 1.0, 1.0, 1.0, 2.0],
+        "differs_in_middle": [1.0, 1.0, 9.0, 1.0, 1.0],
+        "differs_immediately": [1.0, 2.0, 3.0, 4.0, 5.0],
+        "single_sample": [1.0],
+    }
+    for name, values in series.items():
+        attr = UsdGeom.Xform.Define(stage, f"/{name}").GetPrim().CreateAttribute(
+            "v", Sdf.ValueTypeNames.Double
+        )
+        for time, value in enumerate(values):
+            attr.Set(value, Usd.TimeCode(time))
+
+    for name, values in series.items():
+        path = Sdf.Path(f"/{name}.v")
+        times = layer.ListTimeSamplesForPath(path)
+        first = layer.QueryTimeSample(path, times[0])
+        naive = all(layer.QueryTimeSample(path, time) == first for time in times[1:])
+
+        assert _samples_never_change(layer, path, times) is naive, name
+        assert naive is (len(set(values)) == 1), name

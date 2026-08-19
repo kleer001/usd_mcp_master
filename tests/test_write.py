@@ -188,3 +188,49 @@ def test_authoring_on_an_instance_proxy_is_refused(composed, audit_log):
         set_visibility(composed, "/Set/PropB/Geom", False, composed, confirm=True)
 
     assert entries(audit_log) == []
+
+
+def test_a_large_value_is_bounded_in_the_report_and_whole_in_the_audit_log(tmp_path, monkeypatch):
+    """The two halves of a write pull in opposite directions, and both must hold.
+
+    What comes back is bounded, because an agent cannot spend its context window on
+    three-quarters of a million points. What the audit log records is not, because a
+    record of the leading elements is not a record of what was authored.
+
+    The dry run — the default call — must not pay for the whole conversion either: it
+    reports a few hundred elements, so it converts a few hundred.
+    """
+    from pxr import Gf, Usd, UsdGeom, Vt
+
+    from usd_mcp.write import set_attribute
+
+    log = tmp_path / "audit.log"
+    monkeypatch.setenv("USD_MCP_AUDIT_LOG", str(log))
+
+    stage_path = tmp_path / "mesh.usda"
+    stage = Usd.Stage.CreateNew(str(stage_path))
+    mesh = UsdGeom.Mesh.Define(stage, "/Mesh")
+    points = Vt.Vec3fArray([Gf.Vec3f(index, 0.0, 1.5) for index in range(5000)])
+    mesh.GetPointsAttr().Set(points)
+    stage.GetRootLayer().Save()
+
+    plan = set_attribute(str(stage_path), "/Mesh", "points", points, str(stage_path))
+    reported = plan["change"]["from"]
+
+    assert plan["applied"] is False
+    assert reported["elements_truncated"] == {
+        "reported": len(reported["elements"]),
+        "total": 5000,
+    }
+    assert len(reported["elements"]) < 5000
+
+    applied = set_attribute(
+        str(stage_path), "/Mesh", "points", points, str(stage_path), confirm=True
+    )
+    assert applied["applied"] is True
+    assert applied["resolved_value_after"]["elements_truncated"]["total"] == 5000
+
+    entry = json.loads(log.read_text().strip().splitlines()[-1])
+    assert len(entry["from"]) == 5000
+    assert len(entry["to"]) == 5000
+    assert entry["to"][-1] == [4999.0, 0.0, 1.5]

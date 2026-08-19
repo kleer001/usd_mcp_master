@@ -106,16 +106,26 @@ def stages(tmp_path, count):
 
 
 def test_the_cache_is_bounded(tmp_path):
-    """Least recently used goes first, so the bound holds however many are asked for."""
+    """Least recently used goes first, so the bound holds however many are asked for.
+
+    Asserted by what a caller can see — the evicted stage comes back as a different
+    object, the retained ones do not — rather than by the length of the cache dict.
+    The bound is a promise about recomposition, and an `OrderedDict` holding two
+    entries is how it is kept today, not what it is.
+    """
     common.enable_stage_cache(limit=2)
     a, b, c = stages(tmp_path, 3)
 
-    open_stage(a)
-    open_stage(b)
-    assert len(common._stage_cache) == 2
+    first_a = open_stage(a)
+    first_b = open_stage(b)
+    assert open_stage(a) is first_a, "a was evicted while still within the limit"
 
-    open_stage(c)
-    assert len(common._stage_cache) == 2
+    open_stage(c)  # a third stage past a limit of two: b is least recently used
+
+    # Order matters here: re-opening the evicted b puts it back and costs a slot, so the
+    # stage that should have survived is checked first.
+    assert open_stage(a) is first_a, "a was evicted although it was used more recently"
+    assert open_stage(b) is not first_b, "b survived past the bound"
 
 
 def test_a_hit_refreshes_its_position(tmp_path):
@@ -123,12 +133,12 @@ def test_a_hit_refreshes_its_position(tmp_path):
     a, b, c = stages(tmp_path, 3)
 
     first = open_stage(a)
-    open_stage(b)
+    second = open_stage(b)
     open_stage(a)  # a is now the most recently used, b the least
     open_stage(c)  # so c evicts b, not a
 
     assert open_stage(a) is first
-    assert (os.path.realpath(b), True) not in common._stage_cache
+    assert open_stage(b) is not second, "c evicted a, not the least recently used b"
 
 
 def test_the_write_path_never_takes_a_cached_stage(shot):
@@ -137,3 +147,24 @@ def test_the_write_path_never_takes_a_cached_stage(shot):
     read = open_stage(shot)
     assert open_stage(shot, cached=False) is not read
     assert open_stage(shot) is read
+
+
+def test_a_stage_usd_declines_to_open_raises_rather_than_returning_none(tmp_path, monkeypatch):
+    """The other half of the open contract, and the half USD may never exercise.
+
+    `open_stage` translates `Tf.ErrorException` into `ValueError`, which is the path a
+    malformed file takes and the one already covered. It also guards the case where USD
+    returns a falsy stage without raising at all. Nothing in the fixtures reaches that
+    branch, so a mutation removing the guard survived the whole suite — and returning
+    `None` there would hand every explainer a null stage, surfacing as an `AttributeError`
+    from somewhere far away instead of the `ValueError` this package documents.
+    """
+    from pxr import Usd
+
+    stage_path = tmp_path / "fine.usda"
+    stage_path.write_text('#usda 1.0\n\ndef Sphere "S"\n{\n}\n')
+
+    monkeypatch.setattr(Usd.Stage, "Open", staticmethod(lambda *args, **kwargs: None))
+
+    with pytest.raises(ValueError, match="could not open as a USD stage"):
+        open_stage(str(stage_path), cached=False)

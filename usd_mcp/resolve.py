@@ -11,7 +11,7 @@ import os
 
 from pxr import Ar
 
-from usd_mcp.common import open_stage
+from usd_mcp.common import find_layer, open_stage
 
 
 def resolve_path(stage_path, asset_path, anchor_layer=None):
@@ -64,11 +64,11 @@ def _anchor_layer(stage, anchor_layer):
     if anchor_layer is None:
         return stage.GetRootLayer()
 
-    wanted = os.path.realpath(anchor_layer)
-    for layer in stage.GetUsedLayers():
-        if layer.identifier == anchor_layer or os.path.realpath(layer.identifier) == wanted:
-            return layer
+    used = stage.GetUsedLayers()
+    layer = find_layer(used, anchor_layer)
+    if layer is not None:
+        return layer
     raise ValueError(
         f"{anchor_layer} is not a layer used by {stage.GetRootLayer().identifier}. "
-        f"Layers it uses: {sorted(layer.identifier for layer in stage.GetUsedLayers())}"
+        f"Layers it uses: {sorted(candidate.identifier for candidate in used)}"
     )

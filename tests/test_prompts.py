@@ -3,8 +3,8 @@ import asyncio
 from usd_mcp.server import build_server, server
 
 
-def render(name, arguments):
-    result = asyncio.run(server.get_prompt(name, arguments))
+def render(name, arguments, srv=server):
+    result = asyncio.run(srv.get_prompt(name, arguments))
     return "\n".join(
         message.content.text for message in result.messages if hasattr(message.content, "text")
     )
@@ -54,15 +54,10 @@ def test_the_read_only_prompt_does_not_send_a_client_after_tools_it_lacks(shot):
 
 
 def test_the_write_prompt_ends_at_a_confirmed_edit(shot):
-    write_server = build_server(enable_write=True)
-    result = asyncio.run(
-        write_server.get_prompt(
-            "debug_override",
-            {"stage_path": shot, "prim_path": "/World/Ball", "attribute_name": "radius"},
-        )
-    )
-    text = "\n".join(
-        m.content.text for m in result.messages if hasattr(m.content, "text")
+    text = render(
+        "debug_override",
+        {"stage_path": shot, "prim_path": "/World/Ball", "attribute_name": "radius"},
+        srv=build_server(enable_write=True),
     )
 
     assert "set_attribute" in text
