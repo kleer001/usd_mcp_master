@@ -42,6 +42,17 @@ PROCESS_MODULES = {"subprocess", "multiprocessing", "pty", "popen2", "commands"}
 PROCESS_CALLS = {"system", "popen", "execv", "execve", "execl", "execlp", "execvp",
                  "spawnv", "spawnl", "fork", "forkpty"}
 
+# Contract 8. Loading code at runtime — a plugin directory, an extension hook, a path
+# the server imports user Python from. A tool surface that grows by executing whatever a
+# directory contains cannot state what it does.
+RUNTIME_IMPORT_MODULES = {"importlib", "imp", "pkgutil", "runpy", "zipimport"}
+RUNTIME_IMPORT_CALLS = {
+    "exec", "eval", "compile", "__import__",
+    "load_module", "exec_module", "spec_from_file_location", "module_from_spec",
+    "import_module", "load_source", "load_compiled", "iter_modules", "run_path",
+}
+
+
 # Contract 2. Authoring scene description or committing a layer to disk. `Set` is the
 # single call that turns a read into a write, so it is listed even though the name is
 # short — nothing in an explainer legitimately calls `.Set()`.
@@ -119,6 +130,23 @@ def test_only_the_write_module_authors(path, tree):
     assert not hits, f"{path} calls a USD authoring API outside {WRITE_MODULE}: {hits}"
 
 
+@pytest.mark.parametrize("path,tree", _modules(), ids=lambda v: v if isinstance(v, str) else "")
+def test_no_code_is_loaded_at_runtime(path, tree):
+    """Contract 8: no plugin directory, no extension hook, no user Python imported.
+
+    Checked the same way as the network and process contracts, and for the same reason:
+    a server that grows a tool surface by executing whatever a directory contains cannot
+    state what it does, so the contract above would describe only the shipped half.
+    """
+    imports = [(mod, line) for mod, line in _imported_roots(tree) if mod in RUNTIME_IMPORT_MODULES]
+    assert not imports, f"{path} imports a runtime-import module: {imports}"
+
+    calls = [
+        (name, line) for name, line in _called_attributes(tree) if name in RUNTIME_IMPORT_CALLS
+    ]
+    assert not calls, f"{path} loads code at runtime: {calls}"
+
+
 def test_the_default_server_has_no_write_path():
     """Contract 2: writing is opt-in, and the default server cannot do it.
 
@@ -132,6 +160,7 @@ def test_the_default_server_has_no_write_path():
         assert annotations is not None, f"{tool.name} carries no annotations"
         assert annotations.read_only_hint is True, f"{tool.name} is not annotated read-only"
         assert annotations.open_world_hint is False, f"{tool.name} claims an open world"
+        assert annotations.idempotent_hint is True, f"{tool.name} is not annotated idempotent"
 
     exposed = MUTATING_TOOLS & {tool.name for tool in tools}
     assert not exposed, f"default server exposes a write path: {exposed}"
@@ -148,6 +177,7 @@ def test_mutating_tools_are_exactly_the_declared_set():
 
     assert mutating == MUTATING_TOOLS, f"undeclared mutating tools: {mutating ^ MUTATING_TOOLS}"
     for tool in tools:
+        assert tool.annotations.idempotent_hint is True, f"{tool.name} is not idempotent"
         if tool.name in MUTATING_TOOLS:
             assert tool.annotations.destructive_hint is True, f"{tool.name} is not destructive"
 
@@ -258,5 +288,55 @@ def test_spec_lists_exactly_the_fields_the_code_bounds():
 
     assert in_spec == in_code, (
         f"SPEC.md and the code disagree about bounded fields. "
+        f"Only in SPEC: {sorted(in_spec - in_code)}. Only in code: {sorted(in_code - in_spec)}."
+    )
+
+
+def _value_bounded_fields(tree):
+    """Every result field whose value goes through `bounded_value` or `bounded_plain`.
+
+    Two shapes reach one: a key in a dict literal, and a subscript assignment onto a
+    plan already built. A field bounded either way is a field a caller can receive a
+    trimmed array in, so both count.
+    """
+    wrappers = {"bounded_value", "bounded_plain"}
+
+    def wrapped(value):
+        call = value.body if isinstance(value, ast.IfExp) else value
+        return (
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id in wrappers
+        )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if isinstance(key, ast.Constant) and wrapped(value):
+                    yield key.value
+        elif isinstance(node, ast.Assign) and wrapped(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript) and isinstance(target.slice, ast.Constant):
+                    yield target.slice.value
+
+
+def test_spec_lists_exactly_the_fields_the_code_bounds_as_values():
+    """SPEC.md#result-bounds names every value-bounded field, and no field it does not.
+
+    The sibling check above does this for `bounded()` lists. An array is the field type
+    that can overrun a context window on its own, so the list naming which fields can
+    come back trimmed is the one a reader is most likely to size a budget against —
+    and the one whose drift would cost the most.
+    """
+    in_code = {field for _, tree in _modules() for field in _value_bounded_fields(tree)}
+    assert in_code, "no bounded_value()/bounded_plain() calls found; the parse is broken"
+
+    spec = (Path(__file__).resolve().parent.parent / "SPEC.md").read_text(encoding="utf-8")
+    start = spec.index("Bounded value\nfields:")
+    clause = spec[start : spec.index("That list is checked the same way")]
+    in_spec = set(re.findall(r"`([a-z_]+)`", clause))
+
+    assert in_spec == in_code, (
+        f"SPEC.md and the code disagree about value-bounded fields. "
         f"Only in SPEC: {sorted(in_spec - in_code)}. Only in code: {sorted(in_code - in_spec)}."
     )

@@ -21,7 +21,7 @@ from usd_mcp.common import bounded, bounded_value, value_brief
 from usd_mcp.compose import explain_prim, explain_variants
 from usd_mcp.diff import diff_stages
 from usd_mcp.explain import explain_value
-from usd_mcp.portability import _SEVERITY, check_portability
+from usd_mcp.portability import check_portability
 from usd_mcp.profile import profile_stage
 from usd_mcp.write import set_attribute
 
@@ -167,10 +167,19 @@ class TestPortabilityBounds:
         assert result["summary"]["unreadable"] == 60
 
     def test_the_worst_materials_are_the_ones_kept(self, looks):
-        """Sorted worst first, so a bound drops what would have rendered anyway."""
+        """Sorted worst first, so a bound drops what would have rendered anyway.
+
+        The expected order is written out rather than derived from `_SEVERITY`. Sorting
+        the expectation with the same table the code sorts by proves the sort call runs,
+        not that it runs the right way round — swap two entries in `_SEVERITY` and a
+        test written that way still passes. This order is the one SPEC.md publishes.
+        """
         materials = check_portability(looks, "renderman")["materials"]
         verdicts = [entry["verdict"] for entry in materials]
-        assert verdicts == sorted(verdicts, key=lambda v: -_SEVERITY[v])
+        worst_first = ["unreadable", "renderer_specific", "preview_fallback", "native"]
+
+        assert verdicts == sorted(verdicts, key=worst_first.index)
+        assert set(verdicts) == set(worst_first), "the fixture no longer covers every verdict"
 
     def test_findings_read_every_material_not_the_bounded_slice(self, wide, lowered_limit):
         """A count of what will not survive is only true if it counted all of them."""
