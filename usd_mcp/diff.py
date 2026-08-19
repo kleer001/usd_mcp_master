@@ -23,6 +23,12 @@ SCOPES = ("composed", "layer")
 # Stage.Traverse() skips instance proxies, and a change inside an instanced asset lives
 # nowhere else on a composed stage — reporting two such stages as identical would be a
 # confident wrong answer. Proxies are cheap to skip and expensive to miss.
+#
+# The default predicate also demands `PrimIsLoaded`, which `profile.py` has to drop so a
+# prim carrying an unloaded payload still counts. Keeping it here is safe only because
+# `diff_stages` takes no `load_payloads` argument and always composes with them loaded,
+# so nothing is unloaded to hide. Give this function that argument and this predicate has
+# to lose the clause too, or a deferred payload's own prim silently leaves both sides.
 _ALL_PRIMS = Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)
 
 
@@ -78,20 +84,21 @@ def diff_stages(stage_a, stage_b, tolerance=0.0, scope="composed"):
 
 
 def _compare(prims_a, prims_b, tolerance):
+    paths_a, paths_b = set(prims_a), set(prims_b)
     added = [
         {"path": path, "type_name": prims_b[path]["type_name"]}
-        for path in sorted(set(prims_b) - set(prims_a))
+        for path in sorted(paths_b - paths_a)
     ]
     removed = [
         {"path": path, "type_name": prims_a[path]["type_name"]}
-        for path in sorted(set(prims_a) - set(prims_b))
+        for path in sorted(paths_a - paths_b)
     ]
 
     retyped = []
     changed = []
     within_tolerance = 0
 
-    for path in sorted(set(prims_a) & set(prims_b)):
+    for path in sorted(paths_a & paths_b):
         prim_a, prim_b = prims_a[path], prims_b[path]
         if prim_a["type_name"] != prim_b["type_name"]:
             retyped.append(
@@ -129,8 +136,8 @@ def _change(prim_path, name, attr_a, attr_b, tolerance):
     counts and the first time they part company — enough to find the change, short
     enough to read.
     """
-    times_a = attr_a["times"] if attr_a else []
-    times_b = attr_b["times"] if attr_b else []
+    times_a = _series(attr_a, "times")
+    times_b = _series(attr_b, "times")
     return {
         "prim": prim_path,
         "attribute": name,
@@ -142,7 +149,9 @@ def _change(prim_path, name, attr_a, attr_b, tolerance):
             {
                 "count_a": len(times_a),
                 "count_b": len(times_b),
-                "first_differing_time": _first_differing_time(attr_a, attr_b, tolerance),
+                "first_differing_time": _first_differing_time(
+                    attr_a, attr_b, times_a, times_b, tolerance
+                ),
             }
             if times_a or times_b
             else None
@@ -150,12 +159,23 @@ def _change(prim_path, name, attr_a, attr_b, tolerance):
     }
 
 
-def _first_differing_time(attr_a, attr_b, tolerance):
-    """The earliest sample time where the two series part, or null if they agree."""
-    times_a = attr_a["times"] if attr_a else []
-    times_b = attr_b["times"] if attr_b else []
-    samples_a = attr_a["samples"] if attr_a else []
-    samples_b = attr_b["samples"] if attr_b else []
+def _series(attr, key):
+    """One of an attribute snapshot's parallel series, or empty when it was not authored.
+
+    An attribute missing from one side is reported, not skipped, so every reader of a
+    snapshot has to spell the absent case. Spelling it once keeps the two series and the
+    two sides from drifting apart.
+    """
+    return attr[key] if attr else []
+
+
+def _first_differing_time(attr_a, attr_b, times_a, times_b, tolerance):
+    """The earliest sample time where the two series part, or null if they agree.
+
+    Takes the times its caller already derived rather than deriving them again.
+    """
+    samples_a = _series(attr_a, "samples")
+    samples_b = _series(attr_b, "samples")
 
     for index in range(min(len(times_a), len(times_b))):
         if not _equal(times_a[index], times_b[index], tolerance):
