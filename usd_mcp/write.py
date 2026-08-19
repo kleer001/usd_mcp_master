@@ -33,7 +33,12 @@ from usd_mcp.common import (
     root_layer_stack,
     value_brief,
 )
-from usd_mcp.compose import edit_target_verdict, layer_in_root_stack
+from usd_mcp.compose import (
+    edit_target_verdict,
+    instance_proxy_refusal,
+    is_writable,
+    layer_in_root_stack,
+)
 
 AUDIT_LOG_ENV = "USD_MCP_AUDIT_LOG"
 DEFAULT_AUDIT_LOG = Path.home() / ".usd-mcp" / "audit.log"
@@ -226,18 +231,13 @@ def _metadata_verdict(stage, prim, layer, field):
 def _require_authorable(prim):
     """Refuse a prim that cannot hold an opinion no matter which layer is targeted."""
     if prim.IsInstanceProxy():
-        raise ValueError(
-            f"{prim.GetPath()} is an instance proxy: it exists only through an ancestor "
-            f"marked `instanceable`, and an opinion authored at this path is discarded "
-            f"whatever layer it goes in. Author on the corresponding prim in the "
-            f"prototype's source, or clear `instanceable` on the ancestor."
-        )
+        raise ValueError(instance_proxy_refusal(prim.GetPath()))
 
 
 def _writable_layer(stage, target_layer):
     """The target layer, or a refusal naming why it cannot hold an edit."""
     layer = layer_in_root_stack(stage, target_layer)
-    if layer.GetFileFormat().IsPackage() or not layer.permissionToEdit:
+    if not is_writable(layer):
         raise ValueError(
             f"{layer.identifier} cannot be authored into. A packaged layer accepts an edit in "
             f"memory and then refuses to save it. Pick a layer outside the package."

@@ -7,13 +7,12 @@ in force, and whether an edit aimed at a given layer would win or lose. All thre
 read; none authors.
 """
 
-import os
-
 from pxr import Usd
 
 from usd_mcp.common import (
     bounded,
     bounded_plain,
+    find_layer,
     layer_identifiers,
     open_stage,
     require_attribute,
@@ -111,9 +110,7 @@ def explain_edit_target(stage_path, prim_path, attribute_name, target_layer):
         "attribute": attribute_name,
         "target_layer": layer.identifier,
         "current_resolved_value": bounded_plain(attr.Get()),
-        **bounded(
-            "layer_stack", layer_identifiers(stage)
-        ),
+        **bounded("layer_stack", layer_identifiers(stage)),
         **edit_target_verdict(prim, attr, layer),
     }
 
@@ -131,18 +128,13 @@ def edit_target_verdict(prim, attr, layer):
         return {
             "would_win": False,
             "blocked_by": "instance_proxy",
-            "target_writable": _is_writable(layer),
+            "target_writable": is_writable(layer),
             "outranked_by": None,
             "value_that_would_survive": None,
-            "explanation": (
-                f"{prim.GetPath()} is an instance proxy: it exists only through an ancestor "
-                f"marked `instanceable`, and an opinion authored at this path is discarded "
-                f"whatever layer it goes in. Author on the corresponding prim in the "
-                f"prototype's source, or clear `instanceable` on the ancestor."
-            ),
+            "explanation": instance_proxy_refusal(prim.GetPath()),
         }
 
-    writable = _is_writable(layer)
+    writable = is_writable(layer)
     root_arc = Usd.PrimCompositionQuery(prim).GetCompositionArcs()[0]
     stronger = Usd.AttributeQuery(attr, root_arc.MakeResolveTargetStrongerThan(layer))
 
@@ -178,7 +170,23 @@ def edit_target_verdict(prim, attr, layer):
     }
 
 
-def _is_writable(layer):
+def instance_proxy_refusal(prim_path):
+    """Why an opinion authored at an instance proxy's path cannot take effect.
+
+    `edit_target_verdict` reports this and the write path raises it, so the explanation
+    and the refusal are one sentence rather than two that drift. `_instancing`'s note
+    deliberately does not share it: that one describes a prim rather than refusing an
+    edit, and its own test pins its wording.
+    """
+    return (
+        f"{prim_path} is an instance proxy: it exists only through an ancestor "
+        f"marked `instanceable`, and an opinion authored at this path is discarded "
+        f"whatever layer it goes in. Author on the corresponding prim in the "
+        f"prototype's source, or clear `instanceable` on the ancestor."
+    )
+
+
+def is_writable(layer):
     """Whether scene description authored into this layer could ever be committed.
 
     A packaged layer — a `.usdz` and anything inside one — accepts an edit in memory
@@ -244,18 +252,20 @@ def _instancing(prim):
 def _selection_opinions(prim, variant_set_name):
     """Every layer authoring a selection for this variant set, strongest first."""
     opinions = []
-    for strength, spec in enumerate(prim.GetPrimStack()):
+    for prim_stack_index, spec in enumerate(prim.GetPrimStack()):
         selection = spec.variantSelections.get(variant_set_name)
         if selection is None:
             continue
         opinions.append(
             {
+                # Strength among the selections, which is not the position in the prim
+                # stack: the specs between two selections author something else.
                 "strength": len(opinions),
                 "layer": spec.layer.identifier,
                 "path": str(spec.path),
                 "selection": selection,
                 "wins": not opinions,
-                "prim_stack_index": strength,
+                "prim_stack_index": prim_stack_index,
             }
         )
     return opinions
@@ -270,11 +280,10 @@ def layer_in_root_stack(stage, target_layer):
     about the exact question this server exists to get right.
     """
     candidates = root_layer_stack(stage)
-    wanted = os.path.realpath(target_layer)
-    for layer in candidates:
-        if layer.identifier == target_layer or os.path.realpath(layer.identifier) == wanted:
-            return layer
+    layer = find_layer(candidates, target_layer)
+    if layer is not None:
+        return layer
     raise ValueError(
         f"{target_layer} is not in the root layer stack of {stage.GetRootLayer().identifier}. "
-        f"Layers open for an edit here: {[layer.identifier for layer in candidates]}"
+        f"Layers open for an edit here: {[candidate.identifier for candidate in candidates]}"
     )

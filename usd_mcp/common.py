@@ -348,6 +348,29 @@ def bounded_plain(raw, budget=None):
     }
 
 
+def find_layer(candidates, wanted):
+    """The candidate layer `wanted` names, by identifier or by resolved path, or None.
+
+    Two callers ask this of different candidate sets — the root layer stack for an edit
+    target, every used layer for a resolution anchor — and each raises its own error
+    naming its own set, so only the matching itself belongs here.
+
+    Identifiers are compared across every candidate before any path is resolved, because
+    `realpath` is a syscall apiece and the ordinary caller passes back an identifier this
+    package reported to it. Interleaving the two comparisons spent that round trip on
+    every layer ahead of the match, and on all ~230 of them whenever the answer was no.
+    """
+    candidates = list(candidates)
+    for layer in candidates:
+        if layer.identifier == wanted:
+            return layer
+    resolved = os.path.realpath(wanted)
+    for layer in candidates:
+        if os.path.realpath(layer.identifier) == resolved:
+            return layer
+    return None
+
+
 def layer_identifiers(stage):
     """The stage's layer stack as identifiers, strongest first.
 

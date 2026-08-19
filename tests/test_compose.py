@@ -152,3 +152,30 @@ def test_an_instance_proxy_cannot_hold_an_opinion_in_any_layer(composed):
     assert result["blocked_by"] == "instance_proxy"
     assert result["outranked_by"] is None
     assert "discarded" in result["explanation"]
+
+
+def test_find_layer_prefers_an_exact_identifier_over_a_resolved_path(tmp_path):
+    """Two candidates can name one file. The one spelled as asked wins.
+
+    Comparing identifiers across every candidate before resolving any path is what makes
+    the ordinary call — a caller handing back an identifier this package reported — cost
+    no syscalls at all. It also decides this tie, which the previous per-candidate loop
+    settled by list order: a symlinked alias earlier in the stack used to beat the exact
+    match behind it. Preferring the exact spelling is the deliberate answer.
+    """
+    from usd_mcp.common import find_layer
+
+    real = tmp_path / "base.usda"
+    real.write_text("#usda 1.0\n")
+    alias = tmp_path / "alias.usda"
+    alias.symlink_to(real)
+
+    class _Layer:
+        def __init__(self, identifier):
+            self.identifier = identifier
+
+    candidates = [_Layer(str(alias)), _Layer(str(real))]
+
+    assert find_layer(candidates, str(real)).identifier == str(real)
+    assert find_layer(candidates, str(alias)).identifier == str(alias)
+    assert find_layer(candidates, str(tmp_path / "absent.usda")) is None
