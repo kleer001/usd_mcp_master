@@ -1,0 +1,45 @@
+#usda 1.0
+(
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def Scope "envs"
+    {
+        def Xform "env_0"
+        {
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+
+            def Cube "Robot"
+            {
+            }
+
+            def DomeLight "Light"
+            {
+                uniform bool collection:lightLink:includeRoot = 0
+                rel collection:lightLink:includes = </World/envs/env_0>
+                asset inputs:texture:file = @studio.hdr@
+            }
+        }
+
+        def Xform "env_1"
+        {
+            double3 xformOp:translate = (5, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+
+            def Cube "Robot"
+            {
+            }
+
+            def DomeLight "Light"
+            {
+                uniform bool collection:lightLink:includeRoot = 0
+                rel collection:lightLink:includes = </World/envs/env_1>
+                asset inputs:texture:file = @sunset.hdr@
+            }
+        }
+    }
+}
+

@@ -15,31 +15,38 @@ open contribution route into NVIDIA's official USD curriculum.
 
 ### Parallel
 
-- [ ] #1 Answer IsaacLab discussion #4828 — "How to save collision mesh to a
-      Blender-exported USD so it persists". Opened 2026-03-05, zero replies. The asker
-      adds a collider in the Isaac Sim GUI, it works, and it is gone on reload. That is
-      an edit landing in a session layer instead of the asset layer — the single failure
-      this package exists to name. `explain_value` on `physics:collisionEnabled` and
-      `explain_edit_target` against the asset layer answer it directly.
-      https://github.com/isaac-sim/IsaacLab/discussions/4828
-- [ ] #2 Answer IsaacLab discussion #5206 — "How to use different HDRI backgrounds per
-      environment in parallel environments?". Opened 2026-04-08, zero replies. Per-env
-      `DomeLight`s authored under `/World/envs/env_N` and "both environments still appear
-      to share the same HDRI, or one overrides the other". Either the env prims are
-      instanced (opinions on proxies are discarded) or something stronger wins.
-      `explain_prim` reports the instancing, `explain_value` the contest. The asker even
-      asks the right question — "Are DomeLights effectively global in Omniverse/USD, even
-      if authored under different env paths?" — and nobody answered it.
-      https://github.com/isaac-sim/IsaacLab/discussions/5206
-- [ ] #3 Investigate IsaacLab discussion #6020 — "Ray Caster isn't working for my Robot".
-      Opened 2026-06-07, zero replies. URDF-converted robot; the raycaster works on the
-      stock Anymal and not on theirs. Plausibly instanceable meshes the raycaster cannot
-      see. Weaker match than #1 and #2 — confirm the mechanism before replying, and drop
-      it if instancing is not the cause rather than posting a guess.
-      https://github.com/isaac-sim/IsaacLab/discussions/6020
+- [ ] #5 **START HERE. Open the drafts page and read it.** All three replies below are
+      written, verified and audited; the only thing left on them is your verdict, and the
+      page is where you give it.
+      https://claude.ai/code/artifact/81081d51-78fb-40c9-88b5-fe65767744bb
+      Each panel carries the original question as asked, the one-line root cause, the full
+      draft, and a Post / Revise / Hold control. Verdicts persist in the artifact's `db`
+      under `verdicts/<discussion>` — read them back with the Artifact tool's `read_db`
+      (`db_op: "get"`, `collection: "verdicts"`, `doc_id: "5206"` and so on) rather than
+      asking again. A verdict of `null` means unread, not rejected.
 
 ### Sequential
 
+- [ ] #1 (needs: #5) Post the #4828 reply — "How to save collision mesh to a
+      Blender-exported USD so it persists". Draft is final at
+      `tmp/lonevoice-4828/draft-reply.md`. Verified root cause: the `UsdFileCfg` spawn path
+      calls `modify_collision_properties`, which returns `False` on any prim lacking
+      `CollisionAPI` and never applies it, so it is a silent no-op on a Blender export.
+      Identical in v2.0.0, v2.2.0 and main. Post only what the verdict approves.
+      https://github.com/isaac-sim/IsaacLab/discussions/4828
+- [ ] #2 (needs: #5) Post the #5206 reply — "How to use different HDRI backgrounds per
+      environment in parallel environments?". Draft is final at
+      `tmp/lonevoice-5206/draft-reply.md`. Verified root cause:
+      `collection:lightLink:includeRoot` defaults to `1`, so every light lights the whole
+      stage and namespace parenting scopes nothing. The earlier instancing theory was
+      wrong — both per-env textures author cleanly.
+      https://github.com/isaac-sim/IsaacLab/discussions/5206
+- [ ] #3 (needs: #5) Post the #6020 reply — "Ray Caster isn't working for my Robot".
+      Draft is final at `tmp/lonevoice-6020/draft-reply.md`, and it is the weakest of the
+      three by design: a mechanism plus two decisive checks, not a confirmed diagnosis.
+      `vertical_fov_range=(0.0, 0.0)` makes all 71 rays exactly horizontal against a single
+      flat surface. Instancing is **not** the cause; that theory is dropped.
+      https://github.com/isaac-sim/IsaacLab/discussions/6020
 - [ ] #4 (needs: #1, #2) Contribute to `NVIDIA-Omniverse/LearnOpenUSD`. Apache-2.0, 304
       stars, 68 forks, `CONTRIBUTING.md`, and 39 merged PRs across 12 contributors of
       whom 10 are **not** NVIDIA staff — a genuinely open route into NVIDIA's official
@@ -51,6 +58,28 @@ open contribution route into NVIDIA's official USD curriculum.
       https://github.com/NVIDIA-Omniverse/LearnOpenUSD
 
 ## Context
+
+**Three replies are drafted, verified and audited, waiting only on approval to post.**
+Each is in `tmp/lonevoice-<discussion>/draft-reply.md`, with its runnable evidence beside
+it. All three ran through `copy:honest`; that audit caught a 404 repo URL (the real one is
+`kleer001/usd_mcp_master`, not `kleer001/usd_mcp`) and a wrong claim about the anymal demo.
+
+- **#5206 (HDRI)** — root cause verified: `collection:lightLink:includeRoot` defaults to
+  `1`, so every light lights the whole stage and namespace parenting scopes nothing. Both
+  per-env textures author cleanly, so the "override" theory is out. `repro.py` shows each
+  dome lighting both envs; `fix.py` shows light linking scoping them correctly. Unverified
+  and flagged as such in the draft: whether RTX honors light linking on a dome.
+- **#4828 (collision)** — root cause verified: the `UsdFileCfg` spawn path calls
+  `schemas.modify_collision_properties`, which returns `False` on any prim lacking
+  `CollisionAPI` and never applies it. Blender exports declare none, so it is a silent
+  no-op that only logs `Could not perform ... on any prims under`. Identical in v2.0.0,
+  v2.2.0 and main, so version-independent. `bake_collision.py` proves the fix.
+- **#6020 (raycaster)** — instancing is **not** the cause; that theory is dropped. The
+  verified mechanism instead: `vertical_fov_range=(0.0, 0.0)` makes `z = sin(0) = 0` for
+  all 71 rays, so they are exactly horizontal, while `_initialize_warp_meshes` casts
+  against a single flat surface (`Plane` branch, else first Mesh found). The working demo
+  differs only in `vertical_fov_range=[-90, 90]` and a body-level `prim_path`. Posted as a
+  mechanism plus two decisive checks, explicitly not as a confirmed diagnosis.
 
 **Read `CLAUDE.md` first** — layout, conventions, the USD gotchas ledger, the two-front-
 door rule, and where the real test assets come from. Not duplicated here.
@@ -67,7 +96,9 @@ posted 2026-07-14, 35 days with zero replies) on 2026-08-18. The answer — 0.06
 side — was verified four ways: authored `size` × `xformOp:scale`, `UsdGeom.BBoxCache`,
 `physics:mass` over volume landing on exactly 1000 kg/m³, and identical values across
 Isaac Sim 4.5 and 5.0. The reply names `usd_mcp` in a closing paragraph, so a reply or
-its absence is the signal. Watch for a response before investing further in that channel.
+its absence is the signal. **Result: the asker (`kerenR1`) marked it the accepted answer
+14 hours later, 2026-08-19T08:02Z.** No comment text and no reaction, so the acceptance is
+the whole signal — but the method works and the channel is live.
 https://github.com/isaac-sim/IsaacLab/discussions/6508#discussioncomment-18069888
 
 **Channel assessment, measured 2026-08-18.** Not all forums are the same shape:
@@ -118,10 +149,12 @@ the schema coverage suggests.
 
 ## Next Step
 
-Start with #2. It is the strongest match of the three — the asker has already narrowed it
-to a USD semantics question and asked it explicitly, so the reply can be short, concrete,
-and verifiable. Reproduce the shared-HDRI behaviour locally with two cloned env prims
-before writing anything, and confirm whether Isaac Lab's env cloning marks them
-instanceable; that fact decides the whole answer.
+Open the drafts page (#5) and put it in front of the user before doing anything else — that
+is the whole reason this breadcrumb exists in its current state:
+https://claude.ai/code/artifact/81081d51-78fb-40c9-88b5-fe65767744bb
+
+Check the stored verdicts first with the Artifact tool's `read_db`. If a verdict is already
+recorded for a discussion, act on it instead of re-asking. If none are recorded, surface the
+page and wait — do not post anything to GitHub without approval on that specific text.
 
 /home/menser/Dropbox/ai/code/usd_mcp_master

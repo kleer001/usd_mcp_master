@@ -1,0 +1,20 @@
+#usda 1.0
+(
+    defaultPrim = "ChessBoard"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "ChessBoard"
+{
+    def Mesh "Board_mesh" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        uniform token physics:approximation = "convexDecomposition"
+        point3f[] points = [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)]
+    }
+}
+
