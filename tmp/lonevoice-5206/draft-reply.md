@@ -6,7 +6,7 @@ Parenting a light under `/World/envs/env_1` sets where it *is*. It does not set 
 *lights*. What a light lights is a collection, and that collection defaults to the whole
 stage.
 
-### Your authoring worked; that's the confusing part
+### The authoring worked, which is what makes this hard to spot
 
 I rebuilt your setup in plain USD — two envs, one `DomeLight` under each, different
 `inputs:texture:file` on each — and both opinions land cleanly:
@@ -55,7 +55,7 @@ That does what you'd expect at the USD level — I ran the same membership query
 /World/envs/env_1/Light  ->  lights ['/World/envs/env_1/Robot']
 ```
 
-Two caveats I'd rather flag than let you discover:
+Two caveats worth having up front:
 
 - I can't find `lightLink`, `light_link` or `LightLinkCollection` anywhere in the Isaac Lab
   source (GitHub code search across the repo, zero hits each — same search returns 102 for

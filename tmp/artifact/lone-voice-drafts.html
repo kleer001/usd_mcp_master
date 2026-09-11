@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
 <style>
   :root{
+    color-scheme:light;
     --ground:#EDF1F4;
     --surface:#FFFFFF;
     --surface-2:#F5F8FA;
@@ -26,55 +27,6 @@
     --code-dim:#7F94A6;
     --shadow:0 1px 2px rgba(19,28,36,.06), 0 6px 18px -8px rgba(19,28,36,.18);
   }
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]){
-      --ground:#0E161D;
-      --surface:#17222C;
-      --surface-2:#1D2A35;
-      --ink:#E6EDF2;
-      --ink-2:#A9BAC6;
-      --ink-3:#7E919F;
-      --rule:#2B3A47;
-      --rule-soft:#23313D;
-      --accent:#3FA8B2;
-      --accent-ink:#6FC7CF;
-      --accent-wash:#123037;
-      --verified:#5ABA8C;
-      --verified-wash:#143024;
-      --flagged:#D6A344;
-      --flagged-wash:#33280F;
-      --dropped:#D9756A;
-      --dropped-wash:#331C19;
-      --code-bg:#0A1219;
-      --code-ink:#CBD9E5;
-      --code-dim:#6D8496;
-      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
-    }
-  }
-  :root[data-theme="dark"]{
-    --ground:#0E161D;
-    --surface:#17222C;
-    --surface-2:#1D2A35;
-    --ink:#E6EDF2;
-    --ink-2:#A9BAC6;
-    --ink-3:#7E919F;
-    --rule:#2B3A47;
-    --rule-soft:#23313D;
-    --accent:#3FA8B2;
-    --accent-ink:#6FC7CF;
-    --accent-wash:#123037;
-    --verified:#5ABA8C;
-    --verified-wash:#143024;
-    --flagged:#D6A344;
-    --flagged-wash:#33280F;
-    --dropped:#D9756A;
-    --dropped-wash:#331C19;
-    --code-bg:#0A1219;
-    --code-ink:#CBD9E5;
-    --code-dim:#6D8496;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
-  }
-
   *{box-sizing:border-box}
   body{
     margin:0;
@@ -524,7 +476,7 @@ same HDRI, or one HDRI overrides the other.</p>
           set what it <em>lights</em>. What a light lights is a collection, and that collection defaults
           to the whole stage.</p>
 
-        <h4>Your authoring worked; that's the confusing part</h4>
+        <h4>The authoring worked, which is what makes this hard to spot</h4>
         <p>I rebuilt your setup in plain USD &mdash; two envs, one <code>DomeLight</code> under each, different
           <code>inputs:texture:file</code> on each &mdash; and both opinions land cleanly:</p>
 <pre><code>/World/envs/env_0/Light  texture=@studio.hdr@
@@ -556,7 +508,7 @@ coll.CreateIncludesRel().SetTargets([Sdf.Path(f"/World/envs/env_{i}")])</code></
 <pre><code>/World/envs/env_0/Light  -&gt;  lights ['/World/envs/env_0/Robot']
 /World/envs/env_1/Light  -&gt;  lights ['/World/envs/env_1/Robot']</code></pre>
 
-        <p>Two caveats I'd rather flag than let you discover:</p>
+        <p>Two caveats worth having up front:</p>
         <ul>
           <li>I can't find <code>lightLink</code>, <code>light_link</code> or
             <code>LightLinkCollection</code> anywhere in the Isaac Lab source (GitHub code search across
@@ -703,7 +655,7 @@ after Apply     -&gt; bool(CollisionAPI(prim)) = True</code></pre>
           <code>CollisionAPI.Apply()</code>, is not on this path. This is the same in v2.0.0, v2.2.0 and
           current main, so your version doesn't matter here.</p>
 
-        <p><strong>There is a log line for this you probably scrolled past.</strong>
+        <p><strong>There is a log line for this.</strong>
           <code>modify_collision_properties</code> is wrapped in <code>@apply_nested</code>, which walks the
           subtree and, when nothing succeeds anywhere, logs:</p>
 <pre><code>Could not perform 'modify_collision_properties' on any prims under: '&lt;your path&gt;'.
@@ -723,7 +675,8 @@ after Apply     -&gt; bool(CollisionAPI(prim)) = True</code></pre>
 <pre><code>after the 'GUI' edit:
   authored in runtime layer: True
   authored in asset layer  : False</code></pre>
-        <p>The edit genuinely wins while the session is up, which is why it works when you test it:</p>
+        <p>The edit genuinely wins for as long as the session is up, which is why it behaves correctly
+          right after you make it:</p>
 <pre><code>"would_win": true,
 "explanation": "An opinion authored in runtime_stage.usda would win:
                 no layer stronger than it authors this attribute."</code></pre>
@@ -872,9 +825,9 @@ with the lunar rocks in the environment. However, I'm unable to use Ray Caster o
     self.ray_visualizer.visualize(viz_points)</code></pre>
         <p>A ray that hits nothing comes back <code>inf</code> and gets filtered out. Zero markers means
           <strong>every ray missed</strong>. The sensor is running and aimed &mdash; it's just hitting nothing,
-          which is a much smaller problem than "the ray caster doesn't work on my robot."</p>
+          which narrows the problem down a long way.</p>
 
-        <h4>Compare your config against the demo you copied</h4>
+        <h4>Compare your config against the demo</h4>
         <p>The demo script you linked configures it like this:</p>
 <pre><code>ray_caster = RayCasterCfg(
     prim_path="{ENV_REGEX_NS}/Robot/base/lidar_cage",
@@ -889,11 +842,11 @@ with the lunar rocks in the environment. However, I'm unable to use Ray Caster o
           on:</p>
         <ol>
           <li><code>prim_path</code> points at <code>Robot/base/lidar_cage</code> &mdash; a specific body &mdash; not
-            at the articulation root. You already tried adding a <code>lidar_link</code> and pointing at
-            it, so you've effectively tested this one.</li>
+            at the articulation root. Adding the <code>lidar_link</code> and pointing the sensor at it
+            already covers this one.</li>
           <li><code>vertical_fov_range=[-90, 90]</code> across <code>channels=100</code>. Yours is
-            <code>(0.0, 0.0)</code> across <code>channels=1</code>. <strong>That is the variable you never
-            moved</strong>, through both of your attempts.</li>
+            <code>(0.0, 0.0)</code> across <code>channels=1</code>. <strong>That is the one setting that
+            stayed the same across both attempts.</strong></li>
         </ol>
 
         <h4>Why <code>(0.0, 0.0)</code> can't hit a floor</h4>
@@ -904,8 +857,8 @@ with the lunar rocks in the environment. However, I'm unable to use Ray Caster o
 360-degree wrap detected -&gt; drop last -&gt; 71 rays actually cast
 z-component of every ray direction: min=0.0  max=0.0
 =&gt; every ray is exactly horizontal.</code></pre>
-        <p>(Incidentally it's 71 rays, not the 72 your comment expects &mdash; the pattern drops the last sample
-          on a full 360&deg; sweep so it doesn't double up.)</p>
+        <p>(It also yields 71 rays rather than 72 &mdash; the pattern drops the last sample on a full
+          360&deg; sweep so the two ends don't land on top of each other.)</p>
 
         <p>Now what you're casting <em>at</em>. <code>_initialize_warp_meshes</code> doesn't use all the
           geometry under <code>mesh_prim_paths</code> &mdash; it picks exactly one thing, and checks for a

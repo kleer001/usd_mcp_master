@@ -10,10 +10,10 @@ def _debug_vis_callback(self, event):
 ```
 
 A ray that hits nothing comes back `inf` and gets filtered out. Zero markers means **every
-ray missed**. The sensor is running and aimed — it's just hitting nothing, which is a much
-smaller problem than "the ray caster doesn't work on my robot."
+ray missed**. The sensor is running and aimed — it's just hitting nothing, which narrows
+the problem down a long way.
 
-### Compare your config against the demo you copied
+### Compare your config against the demo
 
 The demo script you linked configures it like this:
 
@@ -33,10 +33,9 @@ Same sensor, same pattern class as yours. Two things differ, and the second is t
 bet on:
 
 1. `prim_path` points at `Robot/base/lidar_cage` — a specific body — not at the articulation
-   root. You already tried adding a `lidar_link` and pointing at it, so you've effectively
-   tested this one.
+   root. Adding the `lidar_link` and pointing the sensor at it already covers this one.
 2. `vertical_fov_range=[-90, 90]` across `channels=100`. Yours is `(0.0, 0.0)` across
-   `channels=1`. **That is the variable you never moved**, through both of your attempts.
+   `channels=1`. **That is the one setting that stayed the same across both attempts.**
 
 ### Why `(0.0, 0.0)` can't hit a floor
 
@@ -50,8 +49,8 @@ z-component of every ray direction: min=0.0  max=0.0
 => every ray is exactly horizontal.
 ```
 
-(Incidentally it's 71 rays, not the 72 your comment expects — the pattern drops the last
-sample on a full 360° sweep so it doesn't double up.)
+(It also yields 71 rays rather than 72 — the pattern drops the last sample on a full 360°
+sweep so the two ends don't land on top of each other.)
 
 Now what you're casting *at*. `_initialize_warp_meshes` doesn't use all the geometry under
 `mesh_prim_paths` — it picks exactly one thing, and checks for a `Plane` first:

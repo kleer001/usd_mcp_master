@@ -32,7 +32,7 @@ after Apply     -> bool(CollisionAPI(prim)) = True
 on this path. This is the same in v2.0.0, v2.2.0 and current main, so your version doesn't
 matter here.
 
-**There is a log line for this you probably scrolled past.** `modify_collision_properties`
+**There is a log line for this.** `modify_collision_properties`
 is wrapped in `@apply_nested`, which walks the subtree and, when nothing succeeds anywhere,
 logs:
 
@@ -61,7 +61,8 @@ after the 'GUI' edit:
   authored in asset layer  : False
 ```
 
-The edit genuinely wins while the session is up, which is why it works when you test it:
+The edit genuinely wins for as long as the session is up, which is why it behaves correctly
+right after you make it:
 
 ```
 "would_win": true,
