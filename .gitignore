@@ -12,3 +12,7 @@ venv/
 coverage.xml
 htmlcov/
 
+
+# Local working notes and outreach drafts
+tmp/
+BREADCRUMB.md
